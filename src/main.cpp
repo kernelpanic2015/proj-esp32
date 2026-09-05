@@ -198,8 +198,23 @@ bool connectMqtt() {
   logLine("MQTT connecting to " + mqttHost + ":" + String(mqttPort) +
           (mqttTls ? " TLS" : ""));
 
-  if (!mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str())) {
+  bool mqttConnected = false;
+  if (mqttTls) {
+    secureNetworkClient.stop();
+    logLine("TLS connecting to " + mqttHost + ":" + String(mqttPort));
+    if (!secureNetworkClient.connect(mqttHost.c_str(), mqttPort)) {
+      logLine("TLS connection failed");
+      return false;
+    }
+    logLine("TLS connection established");
+    mqttConnected = mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str(), true);
+  } else {
+    mqttConnected = mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str());
+  }
+
+  if (!mqttConnected) {
     logLine("MQTT connection failed err=" + String((int)mqttClient.lastError()) + " rc=" + String((int)mqttClient.returnCode()));
+    if (mqttTls) secureNetworkClient.stop();
     return false;
   }
 
