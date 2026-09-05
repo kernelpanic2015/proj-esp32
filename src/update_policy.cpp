@@ -229,6 +229,32 @@ bool configuredManifestUrl(String& manifestUrl, String& error) {
   return true;
 }
 
+bool automaticCheckConfig(bool& enabled, String& manifestUrl,
+                          uint32_t& intervalSeconds, uint32_t& revision,
+                          String& error) {
+  enabled = false;
+  manifestUrl = "";
+  intervalSeconds = 0;
+  revision = 0;
+  error = "";
+
+  PolicyLock lock;
+  if (!lock.locked() || !policyReady) {
+    error = "update_policy_not_ready";
+    return false;
+  }
+
+  enabled = policy.enabled;
+  manifestUrl = policy.manifestUrl;
+  intervalSeconds = policy.intervalSeconds;
+  revision = policy.revision;
+  if (enabled && manifestUrl.length() == 0) {
+    error = "update_policy_manifest_url_missing";
+    return false;
+  }
+  return true;
+}
+
 bool recordResult(const String& result) {
   if (!validResult(result)) return false;
   PolicyLock lock;

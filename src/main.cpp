@@ -21,6 +21,7 @@
 #include "update_service.h"
 #include "remote_update_service.h"
 #include "update_policy.h"
+#include "update_scheduler.h"
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -165,6 +166,7 @@ String statusJson() {
   json += "\"update\":" + FirmwareUpdate::statusJson() + ",";
   json += "\"remote_update\":" + RemoteFirmwareUpdate::statusJson() + ",";
   json += "\"update_policy\":" + FirmwareUpdatePolicy::statusJson() + ",";
+  json += "\"update_scheduler\":" + FirmwareUpdateScheduler::statusJson() + ",";
   json += "\"state\":\"" + String(stateName(appState)) + "\",";
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
@@ -345,6 +347,7 @@ void startNetworkServices() {
     body += "update=/update\n";
     body += "remote_update_status=/api/update/remote/status\n";
     body += "update_policy=/api/update/policy\n";
+    body += "update_scheduler=/api/update/scheduler\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
@@ -422,6 +425,7 @@ void startNetworkServices() {
   FirmwareUpdate::registerRoutes(server);
   RemoteFirmwareUpdate::registerRoutes(server);
   FirmwareUpdatePolicy::registerRoutes(server);
+  FirmwareUpdateScheduler::registerRoutes(server);
 
   WebSerial.begin(&server);
   WebSerial.onMessage(handleWebCommand);
@@ -474,6 +478,7 @@ void setup() {
   if (!FirmwareUpdatePolicy::begin()) {
     Serial.println("UPDATE_POLICY_NVS_INIT_FAILED");
   }
+  FirmwareUpdateScheduler::begin();
 
   WiFi.mode(WIFI_STA);
   deviceId = buildDeviceId();
@@ -550,6 +555,7 @@ void loop() {
   const bool wifiUp = WiFi.status() == WL_CONNECTED;
 
   if (!wifiUp) {
+    FirmwareUpdateScheduler::tick(false);
     if (appState == AppState::WIFI_CONNECTING) {
       machine.trigger(EVT_WIFI_DOWN);
     } else if (appState == AppState::ONLINE) {
@@ -569,6 +575,7 @@ void loop() {
   }
 
   startNetworkServices();
+  FirmwareUpdateScheduler::tick(true);
   WebSerial.loop();
   mqttClient.loop();
 
