@@ -168,3 +168,23 @@ Final runtime state:
 Aurora proof job completed with `SIGNED_OTA_0_1_6_PROOF_OK` and exit code `0`.
 
 The signed local Web OTA acceptance path is therefore physically validated. The next OTA milestone is remote signed-manifest retrieval and common Web/MQTT/automatic update triggers, while retaining the same verifier and UpdateManager.
+
+## 2026-09-05 — remote signed OTA check/apply proof
+
+- Starting image: `0.1.6`, build `7`, `app1`, `VALID`, system `ONLINE`.
+- A signed local Web transition installed `0.1.7-remote-test`, build `8`, to `app0`.
+- The transition image exposed the new remote update service and enabled plain HTTP only through the controlled `PROJ_REMOTE_UPDATE_ALLOW_HTTP=1` test flag.
+- Transition boot was observed as `app0/PENDING_VERIFY` and then `app0/VALID`.
+- A temporary HTTP release fixture ran on the `kpnote` LAN address and served only the already signed test package files: `manifest.json`, `manifest.sig`, `firmware.bin`.
+- `POST /api/update/check` returned `202`; the ESP32 fetched the manifest/signature itself, verified ECDSA P-256, and reached remote state `AVAILABLE`.
+- `/api/update/status` reported `package_prepared=true`, candidate `0.1.8`, build `9`.
+- `POST /api/update/apply` returned `202`; the ESP32 downloaded the firmware itself.
+- The downloaded `1,205,552` byte image was streamed through the shared UpdateManager path and checked against signed SHA-256 `a6b50616635b2126d019f0c5a95afc3b04960f8120de1e44b8132cfaeddefcf7`.
+- Target boot was observed as `0.1.8/build 9`, `app1/PENDING_VERIFY`, then `app1/VALID`.
+- Final runtime remained `ONLINE`; Wi-Fi, MQTT, MQTT configuration and MQTT/TLS were all present.
+- Final free heap observed: about `164 KiB`.
+- The normal target image reported `http_allowed=false`.
+- Repeating the temporary HTTP manifest check on the final image returned HTTP `400` with `manifest_url_invalid`, proving that HTTP enablement was confined to the lab transition image.
+- Aurora proof job UUID: `dee9ce6c-2b88-4e23-96a0-7db026887780`, completed with exit code `0`.
+
+This proves the transport-independent update architecture: the remote path does not implement a second OTA engine; it feeds the same signed verifier, streaming SHA-256 check, A/B install, application validation and rollback lifecycle already used by Web OTA.

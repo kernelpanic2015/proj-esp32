@@ -43,7 +43,7 @@ coredump   64 KiB
 - MQTT command -> ESP32 -> event round trip validated.
 - PubSubClient selected as MQTT client.
 
-## Stage 1 — Firmware identity, partition policy and signing foundation [next]
+## Stage 1 — Firmware identity, partition policy and signing foundation [validated]
 
 Deliverables:
 
@@ -65,7 +65,7 @@ Acceptance criteria:
 - a generated manifest verifies successfully against the committed public key;
 - device still boots, reconnects to Wi-Fi/MQTT and reports its identity/version.
 
-## Stage 2 — Update Manager state machine
+## Stage 2 — Update Manager state machine [validated]
 
 Create a dedicated non-blocking `UpdateService`/FSM. Initial states:
 
@@ -96,7 +96,7 @@ Required checks before installation:
 - downloaded firmware SHA-256 matches signed manifest;
 - image fits target OTA slot.
 
-## Stage 3 — Web update path
+## Stage 3 — Web update path [validated signed package path]
 
 Recovery/minimal web UI must provide:
 
@@ -117,7 +117,7 @@ POST /api/update/upload
 
 The full Preact UI later consumes the same API from the SD card.
 
-## Stage 4 — Boot validation and rollback
+## Stage 4 — Boot validation and rollback [validated]
 
 A newly installed image starts as pending validation. Validation must test local platform health, not Internet availability.
 
@@ -132,7 +132,9 @@ Candidate validation signals:
 
 On success, mark the image valid. On failure/reboot loop, return to the last known-good image when bootloader capability permits. If native rollback is unavailable in the current framework build, implement/document the compatible fallback before calling this stage complete.
 
-## Stage 5 — MQTT and automatic update triggers
+## Stage 5 — Remote transport validated; MQTT and automatic triggers pending
+
+Remote signed check/apply has been proven on the physical ESP32. MQTT and automatic policy remain triggers only; they must reuse that path.
 
 MQTT may request update actions but never transports the firmware payload.
 

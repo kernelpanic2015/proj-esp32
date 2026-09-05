@@ -40,8 +40,9 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] controlled validation failure profile `nodemcu-32s-rollback-test` built and signed
 - [x] bootloader rollback proven: `0.1.4-rollback-test/app0/PENDING_VERIFY -> 0.1.3/app1/VALID`
 - [x] Wi-Fi and NVS-backed MQTT configuration proven to survive the rollback cycle
-- [ ] require signed package verification on-device before accepting firmware
-- [ ] add remote signed manifest download and automatic/MQTT update triggers
+- [x] require signed package verification on-device before accepting firmware
+- [x] remote signed manifest check + firmware download/apply path validated on hardware
+- [ ] add MQTT and automatic triggers to the validated remote update service
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -51,13 +52,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after the controlled rollback test:
+Validated directly on the physical device on 2026-09-05 after the first remote signed OTA proof:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.3`, build `4`, channel `dev`
+- firmware: `0.1.8`, build `9`, channel `dev`
 - running OTA partition: `app1`
 - boot partition: `app1`
 - next update partition: `app0`
@@ -66,9 +67,9 @@ Validated directly on the physical device on 2026-09-05 after the controlled rol
 - Wi-Fi: connected
 - MQTT: connected
 - MQTT transport: TLS
-- root topic: `lab/proj-esp32`
+- remote OTA policy in the normal image: HTTPS-only
 
-The controlled rollback-test candidate `0.1.4-rollback-test/build 5` was intentionally installed to `app0`, remained `PENDING_VERIFY`, failed local validation by design, and was rolled back by the bootloader to the known-good `0.1.3/build 4` image in `app1`. See `docs/ota-test-log.md`.
+The remote OTA proof used a temporary lab transition image with HTTP enabled only for the LAN fixture. The ESP32 fetched a signed `manifest.json`, verified its ECDSA P-256 signature, downloaded `firmware.bin`, verified the signed SHA-256, installed to the inactive slot, booted `PENDING_VERIFY`, transitioned to `VALID`, and retained Wi-Fi plus NVS-backed MQTT/TLS configuration. The final `0.1.8/build 9` image rejected the same plain-HTTP manifest URL with HTTP 400.
 
 ## OTA partition layout
 

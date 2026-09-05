@@ -114,25 +114,37 @@ The production update trust model uses ECDSA P-256 signatures over SHA-256.
 - private signing key: kept outside the Git repository
 - public verification key: committed/embedded in firmware
 - private key permissions: owner-only
-- release manifest generation/signature verification already validated on the build host
-- next security milestone: reject unsigned/invalid packages on the ESP32 itself before installation
+- release manifest generation/signature verification validated on the build host
+- on-device ECDSA P-256 manifest verification validated
+- unsigned/invalid packages rejected before installation
+- streamed firmware SHA-256 checked against the signed manifest before the image is accepted
 
 Signing authenticates the image. Encryption is a separate later layer for firmware confidentiality.
 
 ## Remote distribution
 
-Planned layout:
+The remote transport now reuses the same signed package verifier and install engine as Web OTA.
+
+Validated API/control flow:
 
 ```text
-firmware/
-  <model>/
-    hw<revision>/
-      manifest.json
-      firmware-<version>.bin.enc
-      firmware-<version>.sig
+POST /api/update/check  -> fetch manifest.json + manifest.sig
+                         -> verify ECDSA/model/hw/channel/build
+                         -> AVAILABLE
+
+POST /api/update/apply  -> stream firmware.bin
+                         -> SHA-256 == signed manifest
+                         -> inactive OTA slot
+                         -> PENDING_REBOOT
+                         -> PENDING_VERIFY
+                         -> VALID or bootloader rollback
 ```
 
-The manifest will eventually be signed and include at least model, hardware revision, version, build, byte size, SHA-256 and download URL.
+`GET /api/update/remote/status` exposes the remote transport state independently from `/api/update/status`.
+
+Default firmware accepts only HTTPS manifest URLs. A compile-time lab-only flag `PROJ_REMOTE_UPDATE_ALLOW_HTTP=1` exists solely so a temporary LAN fixture can prove the transport without creating a public release host. The physical proof used that transition flag, then verified that the final normal `0.1.8/build 9` image rejected the same HTTP URL.
+
+The next transport work is not another OTA engine: MQTT and automatic policies will only trigger this already validated check/apply path.
 
 ## Rollback smoke tests
 
@@ -143,3 +155,22 @@ Validation is staged to isolate failure modes:
 3. **Interrupted/crashing first boot** — still pending; only perform after the signed-update acceptance path is hardened enough to make the test worthwhile.
 
 The controlled rollback proof also confirmed that NVS-backed Wi-Fi/MQTT configuration and unrelated local functionality survive the update/rollback cycle. Exact observations are recorded in `docs/ota-test-log.md`.
+
+## Remote signed OTA physical proof — 2026-09-05
+
+The first end-to-end remote download was proven on the physical ESP32:
+
+```text
+0.1.6 build 7 / app1 / VALID
+        -> signed local transition
+0.1.7-remote-test build 8 / app0 / PENDING_VERIFY -> VALID
+        -> POST /api/update/check
+        -> fetch signed manifest from LAN fixture
+        -> ECDSA verify
+        -> AVAILABLE
+        -> POST /api/update/apply
+        -> stream + SHA-256 verify
+0.1.8 build 9 / app1 / PENDING_VERIFY -> VALID
+```
+
+Final runtime was `ONLINE` with Wi-Fi and MQTT/TLS connected and NVS configuration preserved. The final normal image reported `http_allowed=false` and rejected the temporary plain-HTTP manifest URL with HTTP 400.

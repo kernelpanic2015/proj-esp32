@@ -53,8 +53,8 @@ S=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/status")
 echo "VERSION=$V" >> "$OUT"
 echo "UPDATE=$U" >> "$OUT"
 echo "STATUS=$S" >> "$OUT"
-grep -q '"version":"0.1.6"' <<<"$V"
-grep -q '"build":7' <<<"$V"
+grep -q '"version":"0.1.8"' <<<"$V"
+grep -q '"build":9' <<<"$V"
 grep -q '"running_partition":"app1"' <<<"$U"
 grep -q '"image_state":"VALID"' <<<"$U"
 grep -q '"state":"ONLINE"' <<<"$S"
@@ -75,7 +75,7 @@ CODE=$(curl -sS --max-time 90 -o /tmp/proj-esp32-transition-upload.json -w '%{ht
 echo "UPLOAD_HTTP=$CODE" >> "$OUT"
 cat /tmp/proj-esp32-transition-upload.json >> "$OUT"; echo >> "$OUT"
 [[ "$CODE" == 200 ]]
-wait_for_transition '0.1.7-remote-test' 8 app0
+wait_for_transition '0.1.9-remote-test' 10 app0
 
 R=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/update/remote/status")
 echo "REMOTE_STATUS_TRANSITION=$R" >> "$OUT"
@@ -105,7 +105,7 @@ for _ in $(seq 1 30); do
   sleep 1
   R=$(curl -fsS --max-time 2 "http://$ESP_HOST/api/update/remote/status" 2>/dev/null || true)
   U=$(curl -fsS --max-time 2 "http://$ESP_HOST/api/update/status" 2>/dev/null || true)
-  if grep -q '"state":"AVAILABLE"' <<<"$R" && grep -q '"package_prepared":true' <<<"$U" && grep -q '"candidate_build":9' <<<"$U"; then
+  if grep -q '"state":"AVAILABLE"' <<<"$R" && grep -q '"package_prepared":true' <<<"$U" && grep -q '"candidate_build":11' <<<"$U"; then
     AVAILABLE=1
     echo "REMOTE_AVAILABLE=$R" >> "$OUT"
     echo "PREPARED=$U" >> "$OUT"
@@ -120,7 +120,7 @@ CODE=$(curl -sS --max-time 10 -o /tmp/proj-esp32-remote-apply.json -w '%{http_co
 echo "APPLY_HTTP=$CODE" >> "$OUT"
 cat /tmp/proj-esp32-remote-apply.json >> "$OUT"; echo >> "$OUT"
 [[ "$CODE" == 202 ]]
-wait_for_transition '0.1.8' 9 app1
+wait_for_transition '0.1.10' 11 app1
 
 echo '=== FINAL RUNTIME ===' >> "$OUT"
 S=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/status")

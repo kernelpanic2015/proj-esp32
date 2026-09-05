@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after the controlled rollback proof:
+Current physical device state after the first remote signed OTA proof:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.3`
-- build: `4`
+- firmware: `0.1.8`
+- build: `9`
 - channel: `dev`
 - running partition: `app1`
 - boot partition: `app1`
@@ -58,6 +58,8 @@ Current physical device state after the controlled rollback proof:
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 
+The first remote signed OTA was physically proven with a temporary LAN release fixture. `0.1.7-remote-test/build 8` enabled HTTP only for the controlled transition; it fetched and verified the signed `0.1.8/build 9` manifest and image. The final normal image returned to the default HTTPS-only remote-update policy.
+
 Resolved dependency baseline:
 
 - arduino-fsm 2.2.0
@@ -67,14 +69,14 @@ Resolved dependency baseline:
 - AsyncTCP 3.5.0
 - ESPAsyncWebServer 3.12.0
 - WebSerial 2.1.2
-- ArduinoOTA 2.0.0
+- ArduinoJson 6.21.x
 - ESPmDNS 2.0.0
-- Preferences / WiFi / WiFiClientSecure / Update from Arduino-ESP32
+- Preferences / WiFi / WiFiClientSecure / HTTPClient / Update from Arduino-ESP32
 
-Latest normal build measured during rollback-candidate preparation:
+Latest normal build after remote-update integration:
 
-- RAM: about 54.5 KiB / 320 KiB (16.6%)
-- firmware: about 1.15 MiB / 1.6875 MiB application slot (65%)
+- RAM: about 54.3 KiB / 320 KiB (16.6%)
+- firmware: about 1.20 MiB / 1.6875 MiB application slot (about 67.8%)
 
 ## Flash layout — validated
 
@@ -117,8 +119,12 @@ Validated endpoints include:
 - `http://proj-esp32.local/api/status`
 - `http://proj-esp32.local/api/version`
 - `http://proj-esp32.local/api/update/status`
+- `http://proj-esp32.local/api/update/remote/status`
 - `http://proj-esp32.local/update`
+- `POST http://proj-esp32.local/api/update/prepare`
 - `POST http://proj-esp32.local/api/update/upload`
+- `POST http://proj-esp32.local/api/update/check`
+- `POST http://proj-esp32.local/api/update/apply`
 - `http://proj-esp32.local/webserial`
 - `http://proj-esp32.local/config/mqtt`
 
@@ -199,19 +205,26 @@ Physical-device test proved:
 
 After rollback, Wi-Fi and MQTT/TLS reconnected and NVS-backed MQTT configuration remained present. See `docs/ota-test-log.md` for the exact evidence.
 
-## Firmware signing — host side validated
+## Firmware signing and remote OTA — validated
 
 A local ECDSA P-256 signing keypair exists on `kpnote` outside the Git repository.
 
-Rules:
+Rules and verified behavior:
 
 - private key stays outside Git and has owner-only permissions;
 - public key is committed under `keys/update-signing-public.pem`;
 - `scripts/release_manifest.py` creates a deterministic manifest and signature;
-- OpenSSL verification on the build host has been smoke-tested;
-- the ESP32 does **not yet** enforce signed-package verification before Web OTA installation.
+- the ESP32 verifies the ECDSA signature before preparing an update;
+- unsigned packages and invalid signatures are rejected;
+- the streamed firmware SHA-256 must match the signed manifest before `Update.end()` accepts the image;
+- Web upload and remote download share the same signed-package install path;
+- remote `check` fetches `manifest.json` + `manifest.sig`, then `apply` downloads `firmware.bin`;
+- default builds accept only HTTPS remote manifest URLs;
+- a lab-only build flag can enable HTTP for controlled LAN tests;
+- the first remote OTA proof completed `0.1.7-remote-test/app0/VALID -> 0.1.8/app1/PENDING_VERIFY -> VALID`;
+- after the proof the final `0.1.8` image rejected the same HTTP manifest URL, confirming return to HTTPS-only policy.
 
-The next security milestone is on-device package verification before a candidate can be written/accepted.
+Transport CA validation is still pending. Update authenticity is already protected independently by the signed manifest and signed firmware hash.
 
 ## Serial observation rule
 
@@ -296,9 +309,9 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. add on-device verification of signed update metadata/package before accepting firmware;
-2. then add signed remote manifest download and common update triggers for Web, MQTT and automatic checks;
-3. replace MQTT `setInsecure()` with CA validation;
+1. add MQTT commands `firmware.check` / `firmware.update` as triggers into the already validated remote UpdateManager path;
+2. add persisted automatic-check policy (channel, manifest URL, interval, enabled flag) in NVS without making local control depend on connectivity;
+3. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
 4. harden MQTT with LWT and reconnect backoff/jitter;
 5. continue modular runtime (`ComponentRegistry`, health model, Supervisor, local rules/scheduler);
 6. mount LittleFS and add minimal recovery UI;
