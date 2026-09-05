@@ -28,6 +28,12 @@ constexpr uint32_t VALIDATION_MIN_MS = 10000;
 constexpr uint32_t VALIDATION_TIMEOUT_MS = 30000;
 constexpr uint32_t MIN_HEAP_FOR_VALID_IMAGE = 60000;
 
+#ifdef PROJ_OTA_TEST_FORCE_VALIDATION_FAILURE
+constexpr bool FORCE_VALIDATION_FAILURE = true;
+#else
+constexpr bool FORCE_VALIDATION_FAILURE = false;
+#endif
+
 const char* stateName(UpdateState state) {
   switch (state) {
     case UpdateState::IDLE: return "IDLE";
@@ -113,6 +119,7 @@ String statusJson() {
   json += "\"boot_partition\":\"" + partitionLabel(boot) + "\",";
   json += "\"next_update_partition\":\"" + partitionLabel(nextUpdate) + "\",";
   json += "\"image_state\":\"" + runningImageStateName() + "\",";
+  json += "\"validation_test_forced_failure\":" + String(FORCE_VALIDATION_FAILURE ? "true" : "false") + ",";
 #ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
   json += "\"rollback_enabled\":true";
 #else
@@ -188,7 +195,8 @@ void tick(bool criticalStorageReady) {
   }
 
   const uint32_t elapsed = millis() - stateSinceMs;
-  const bool localHealthOk = criticalStorageReady &&
+  const bool localHealthOk = !FORCE_VALIDATION_FAILURE &&
+                             criticalStorageReady &&
                              ESP.getFreeHeap() >= MIN_HEAP_FOR_VALID_IMAGE;
 
   if (localHealthOk && elapsed >= VALIDATION_MIN_MS) {
@@ -203,7 +211,7 @@ void tick(bool criticalStorageReady) {
   }
 
   if (!localHealthOk && elapsed >= VALIDATION_TIMEOUT_MS) {
-    lastError = "boot_validation_failed";
+    lastError = FORCE_VALIDATION_FAILURE ? "forced_boot_validation_failure" : "boot_validation_failed";
     setState(UpdateState::ROLLBACK);
     esp_ota_mark_app_invalid_rollback_and_reboot();
   }
