@@ -7,12 +7,13 @@ This directory is the canonical handoff for `proj-esp32`.
 1. [`BOOTSTRAP.md`](BOOTSTRAP.md) — current validated state, environment, Aurora control path and next safe actions.
 2. [`ROADMAP.md`](ROADMAP.md) — staged development plan from the current base through OTA, modular runtime, local rules, display and future sensors/actuators.
 3. [`ota.md`](ota.md) — A/B firmware update architecture, rollback lifecycle and update control surfaces.
-4. [`hardware.md`](hardware.md) — confirmed MCU/board/flash/serial facts and GPIO constraints.
-5. [`architecture.md`](architecture.md) — firmware architecture, state machine and network services.
-6. [`mqtt.md`](mqtt.md) — validated RabbitMQ/CloudAMQP MQTT/TLS setup, topics and smoke-test procedure.
-7. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, serial observation and Git synchronization workflow.
-8. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
-9. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
+4. [`ota-test-log.md`](ota-test-log.md) — physical-device OTA validation and rollback test evidence.
+5. [`hardware.md`](hardware.md) — confirmed MCU/board/flash/serial facts and GPIO constraints.
+6. [`architecture.md`](architecture.md) — firmware architecture, state machine and network services.
+7. [`mqtt.md`](mqtt.md) — validated RabbitMQ/CloudAMQP MQTT/TLS setup, topics and smoke-test procedure.
+8. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, serial observation and Git synchronization workflow.
+9. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
+10. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
 
 ## Current milestones
 
@@ -26,41 +27,62 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] MQTT client migrated to `PubSubClient` 2.8.x
 - [x] MQTT/TLS 8883 authenticated connection validated against CloudAMQP/RabbitMQ
 - [x] telemetry publish and command round-trip validated
-- [x] 4 MB custom A/B partition layout built and flashed: 1728 KiB app0 + 1728 KiB app1 + 512 KiB LittleFS partition
+- [x] 4 MB custom A/B partition layout built and flashed: 1728 KiB app0 + 1728 KiB app1 + 512 KiB filesystem partition
 - [x] bootloader rollback capability confirmed enabled in the installed ESP-IDF/Arduino framework
 - [x] firmware identity endpoint `/api/version` validated on hardware
 - [x] Web OTA service/FSM compiled, flashed and `/api/update/status` validated on hardware
-- [x] local ECDSA P-256 firmware signing keypair generated outside Git; private key permissions set to owner-only
+- [x] local ECDSA P-256 firmware signing keypair generated outside Git; private key permissions owner-only
 - [x] public update verification key committed under `keys/update-signing-public.pem`
 - [x] deterministic signed manifest generation and OpenSSL verification smoke-tested
-- [x] OTA candidate `0.1.1` build `2` built and signed
-- [ ] perform first browser Web OTA `0.1.0 -> 0.1.1` and validate app0 -> app1 + `PENDING_VERIFY -> VALID`
-- [ ] deliberately fail a candidate validation and prove bootloader rollback to last known-good image
+- [x] browser/Web OTA app0/app1 slot switching proven
+- [x] Arduino weak-hook behavior identified and `verifyRollbackLater()` overridden
+- [x] application-controlled `PENDING_VERIFY -> VALID` proven on hardware with `0.1.3/build 4`
+- [x] controlled validation failure profile `nodemcu-32s-rollback-test` built and signed
+- [x] bootloader rollback proven: `0.1.4-rollback-test/app0/PENDING_VERIFY -> 0.1.3/app1/VALID`
+- [x] Wi-Fi and NVS-backed MQTT configuration proven to survive the rollback cycle
 - [ ] require signed package verification on-device before accepting firmware
 - [ ] add remote signed manifest download and automatic/MQTT update triggers
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
-- [ ] TFT controller and pin mapping confirmed
-- [ ] XPT2046 touch validated
+- [ ] TFT/touch/SD pin mapping confirmed physically
+- [ ] ILI9488 display bring-up
+- [ ] touch controller bring-up
 
 ## Current runtime state
 
-As validated on 2026-09-05:
+Validated directly on the physical device on 2026-09-05 after the controlled rollback test:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
-- firmware currently flashed: `0.1.0`, build `1`, channel `dev`
 - hardware model: `proj-esp32-35`, revision `1`
-- running OTA partition after serial baseline flash: `app0`
-- FSM: `ONLINE`
+- firmware: `0.1.3`, build `4`, channel `dev`
+- running OTA partition: `app1`
+- boot partition: `app1`
+- next update partition: `app0`
+- native image state: `VALID`
+- FSM/system: `ONLINE`
+- Wi-Fi: connected
 - MQTT: connected
-- MQTT transport: TLS on port 8883
-- broker: CloudAMQP/RabbitMQ
+- MQTT transport: TLS
 - root topic: `lab/proj-esp32`
 
-The signed `0.1.1` / build `2` candidate exists locally on `kpnote` under `/tmp/proj-esp32-release-0.1.1/` for the next Web OTA smoke test. Broker/Wi-Fi credentials and the firmware signing private key are local-only and must not be committed.
+The controlled rollback-test candidate `0.1.4-rollback-test/build 5` was intentionally installed to `app0`, remained `PENDING_VERIFY`, failed local validation by design, and was rolled back by the bootloader to the known-good `0.1.3/build 4` image in `app1`. See `docs/ota-test-log.md`.
+
+## OTA partition layout
+
+```text
+4 MB flash
+├── nvs        20 KiB
+├── otadata     8 KiB
+├── app0      1728 KiB
+├── app1      1728 KiB
+├── filesystem 512 KiB
+└── coredump    64 KiB
+```
+
+`platformio.ini` selects `board_build.filesystem = littlefs`; the partition CSV currently uses the ESP32 data subtype traditionally named `spiffs` for that filesystem region.
 
 ## Storage direction
 
