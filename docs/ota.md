@@ -13,7 +13,20 @@ The current Arduino/ESP-IDF framework exposes the ESP-IDF OTA rollback APIs and 
 - `esp_ota_mark_app_valid_cancel_rollback()`
 - `esp_ota_mark_app_invalid_rollback_and_reboot()`
 
-The firmware must therefore use the bootloader's A/B OTA lifecycle rather than implementing its own ad-hoc slot switching.
+The firmware therefore uses the bootloader's A/B OTA lifecycle rather than implementing ad-hoc slot switching.
+
+### Arduino-ESP32 validation hook
+
+Arduino-ESP32 2.0.17 normally validates a `PENDING_VERIFY` image inside `initArduino()` before application `setup()` executes. Its weak defaults are effectively:
+
+```cpp
+verifyOta() -> true
+verifyRollbackLater() -> false
+```
+
+That default behavior would bypass the project health-validation FSM. `proj-esp32` therefore provides a strong override of the weak `verifyRollbackLater()` hook returning `true`. This leaves the image in `PENDING_VERIFY` until `FirmwareUpdate::tick()` explicitly accepts or rejects it.
+
+This behavior was verified on the physical device: version `0.1.3/build 4` remained `PENDING_VERIFY` for the local validation window and then transitioned to `VALID` under application control.
 
 ## Firmware identity
 
@@ -25,6 +38,8 @@ Every image carries these immutable-at-build-time fields:
 - monotonic integer `build`
 
 The semantic version is for humans. Update ordering is decided by `build`.
+
+The normal release identity has compile-time defaults, while dedicated controlled test profiles may override version/build without changing production defaults.
 
 A future remote manifest must match both model and hardware revision before an image can be considered applicable.
 
@@ -38,7 +53,7 @@ IDLE
   -> reboot
   -> PENDING_VERIFY
       -> VALID
-      -> rollback on failed/interrupted validation
+      -> ROLLBACK
 
 Any error during receive/finalize -> FAILED -> IDLE/retry
 ```
@@ -49,17 +64,18 @@ The update subsystem is independent of the network FSM. A network outage does no
 
 A newly booted OTA image enters `PENDING_VERIFY`. It is marked valid only after a local validation window confirms that essential runtime functions are healthy enough to operate safely.
 
-Initial baseline validation will include conditions such as:
+Initial baseline validation includes:
 
-- application setup completed
-- NVS available
-- no fatal boot/runtime fault
-- heap above a minimum threshold
-- supervisor/runtime loop continues to make progress for the validation window
+- critical internal configuration/NVS ready;
+- no fatal boot/runtime fault reported by the update path;
+- heap above the defined minimum;
+- update/runtime loop continues to progress through the validation window.
+
+As the modular Supervisor/ComponentRegistry is introduced, the validation policy will consume their local critical-health model rather than adding network requirements.
 
 Wi-Fi, MQTT, Internet, SD and non-critical sensors must not be mandatory for validation. Those can be degraded independently.
 
-When the future Supervisor knows a critical self-test failed, it may explicitly call rollback-and-reboot. Otherwise an image that never reaches validation remains unconfirmed and the bootloader can roll back after an interrupted/failed boot sequence.
+If the local critical checks fail through the validation timeout, UpdateManager marks the candidate invalid and requests rollback/reboot. An image that crashes or repeatedly reboots before validation must also be recoverable by the bootloader's pending-image semantics.
 
 ## Control surfaces
 
@@ -76,14 +92,16 @@ No control surface gets a separate OTA implementation.
 
 ## Web development flow
 
-The first milestone is a local Web/API upload to the inactive slot. This validates partitioning, slot switching, version reporting and rollback before remote distribution/security layers are added.
+The current local Web/API upload proves partitioning, slot switching, version reporting and validation before remote distribution/security layers are enforced on-device.
 
-Initial endpoints:
+Endpoints:
 
 - `GET /api/version`
 - `GET /api/update/status`
 - `GET /update`
 - `POST /api/update/upload`
+
+`/api/update/status` exposes both the application FSM state and native OTA metadata: running partition, boot partition, next update partition, raw image state and rollback capability.
 
 The development upload endpoint is a lab feature and must not be exposed to untrusted networks.
 
@@ -94,7 +112,8 @@ The production update trust model uses ECDSA P-256 signatures over SHA-256.
 - private signing key: kept outside the Git repository
 - public verification key: committed/embedded in firmware
 - private key permissions: owner-only
-- firmware/package is rejected if signature verification fails
+- release manifest generation/signature verification already validated on the build host
+- next security milestone: reject unsigned/invalid packages on the ESP32 itself
 
 Signing authenticates the image. Encryption is a separate later layer for firmware confidentiality.
 
@@ -111,17 +130,14 @@ firmware/
       firmware-<version>.sig
 ```
 
-The manifest will eventually be signed as well and include at least model, hardware revision, version, build, byte size, SHA-256 and download URL.
+The manifest will eventually be signed and include at least model, hardware revision, version, build, byte size, SHA-256 and download URL.
 
-## Rollback smoke test
+## Rollback smoke tests
 
-A controlled test must prove all of the following:
+Validation is staged to isolate failure modes:
 
-1. device is running image A;
-2. image B is uploaded to the inactive slot;
-3. boot switches to B;
-4. B reports `PENDING_VERIFY`;
-5. a healthy B is marked `VALID`;
-6. another test image is booted but deliberately not validated/interrupted;
-7. bootloader returns to the last valid image;
-8. NVS configuration survives the update/rollback cycle.
+1. **Healthy candidate** — prove `PENDING_VERIFY -> VALID`. Completed with `0.1.3/build 4`.
+2. **Controlled local validation failure** — a dedicated PlatformIO test profile forces the UpdateManager health result false; after timeout it must mark the candidate invalid and return to the previous valid image.
+3. **Interrupted/crashing first boot** — after explicit rollback is proven, test that a candidate which never reaches validation is also recovered by the bootloader.
+
+For every rollback test, NVS configuration and unrelated local functionality must survive.
