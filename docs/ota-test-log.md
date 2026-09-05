@@ -40,8 +40,22 @@ The device must never depend on Internet or MQTT to decide whether a newly boote
 - Runtime remained healthy: system `ONLINE`, Wi-Fi connected, MQTT connected/TLS, free heap about 169 KiB.
 - NVS-backed MQTT configuration survived the OTA transition.
 
-### Important observation
+### Root cause of immediate VALID state
 
-`PENDING_VERIFY` was **not** observed. At roughly 4 seconds uptime the raw ESP-IDF image state was already `VALID`, while the application-level UpdateManager FSM was `IDLE`. This happened before the application's configured 10-second validation window could mark the image valid itself.
+Arduino-ESP32 2.0.17 defines weak hooks `verifyRollbackLater()` and `verifyOta()`. Their defaults are respectively `false` and `true`, so `initArduino()` automatically marks a `PENDING_VERIFY` image valid before application `setup()` runs.
 
-Therefore automatic rollback on an unvalidated/crashing first boot is **not yet proven**. Before the deliberate rollback test, inspect the exact Arduino `Update`/ESP-IDF OTA behavior and bootloader configuration used by this build so we understand why the new image is already `VALID`.
+`proj-esp32` now overrides the weak `verifyRollbackLater()` hook and returns `true`. This defers validation to `FirmwareUpdate::tick()` so the project FSM owns the health window and rollback decision.
+
+## 2026-09-05 — 0.1.2/build 3 -> 0.1.3/build 4
+
+- Source: `0.1.2`, build `3`, running `app0`, image state `VALID`.
+- Target: `0.1.3`, build `4`, written to `app1`.
+- Upload response: `PENDING_REBOOT`, `received_bytes=1156816`.
+- At the first reachable sample (~2 seconds), both the application UpdateManager and raw ESP-IDF state were `PENDING_VERIFY`.
+- `PENDING_VERIFY` remained visible through successive observations.
+- Around the configured local validation window, both states transitioned to `VALID`.
+- Final partition state: running `app1`, boot `app1`, next update `app0`, rollback enabled.
+- Runtime remained `ONLINE`; Wi-Fi and MQTT/TLS remained connected; free heap remained about 168 KiB.
+- NVS-backed MQTT configuration survived again.
+
+This test proves that the application now owns `PENDING_VERIFY -> VALID`. The next test is a deliberately failed local validation that must return to the last known-good image without affecting persistent configuration.
