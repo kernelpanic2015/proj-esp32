@@ -425,6 +425,60 @@ String statusJson() {
   return json;
 }
 
+bool requestCheck(const String& requestedUrl, String& error) {
+  error = "";
+  String url = requestedUrl;
+  url.trim();
+  if (!validManifestUrl(url)) {
+    error = "manifest_url_invalid";
+    return false;
+  }
+
+  {
+    StateLock lock;
+    if (!lock.locked()) {
+      error = "state_lock_timeout";
+      return false;
+    }
+    if (workerTask != nullptr || remoteState == RemoteState::CHECKING ||
+        remoteState == RemoteState::DOWNLOADING) {
+      error = "remote_update_busy";
+      return false;
+    }
+    manifestUrl = url;
+    baseUrl = "";
+    lastError = "";
+    remoteState = RemoteState::IDLE;
+  }
+
+  if (!startWorker(checkWorker, "ota-check", error)) {
+    setFailed(error);
+    return false;
+  }
+  return true;
+}
+
+bool requestApply(String& error) {
+  error = "";
+  {
+    StateLock lock;
+    if (!lock.locked()) {
+      error = "state_lock_timeout";
+      return false;
+    }
+    if (remoteState != RemoteState::AVAILABLE || workerTask != nullptr) {
+      error = "remote_update_not_available";
+      return false;
+    }
+  }
+
+  if (!startWorker(applyWorker, "ota-apply", error)) {
+    setFailed(error);
+    return false;
+  }
+  return true;
+}
+
 void registerRoutes(AsyncWebServer& server) {
   server.on("/api/update/remote/status", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", statusJson());
@@ -436,56 +490,22 @@ void registerRoutes(AsyncWebServer& server) {
       return;
     }
 
-    String url = request->getParam("manifest_url", true)->value();
-    url.trim();
-    if (!validManifestUrl(url)) {
-      request->send(400, "application/json", "{\"error\":\"manifest_url_invalid\"}");
-      return;
-    }
-
-    {
-      StateLock lock;
-      if (!lock.locked()) {
-        request->send(503, "application/json", "{\"error\":\"state_lock_timeout\"}");
-        return;
-      }
-      if (workerTask != nullptr || remoteState == RemoteState::CHECKING ||
-          remoteState == RemoteState::DOWNLOADING) {
-        request->send(409, "application/json", "{\"error\":\"remote_update_busy\"}");
-        return;
-      }
-      manifestUrl = url;
-      baseUrl = "";
-      lastError = "";
-      remoteState = RemoteState::IDLE;
-    }
-
     String error;
-    if (!startWorker(checkWorker, "ota-check", error)) {
-      setFailed(error);
-      request->send(500, "application/json", statusJson());
+    if (!requestCheck(request->getParam("manifest_url", true)->value(), error)) {
+      int code = 400;
+      if (error == "remote_update_busy") code = 409;
+      else if (error == "state_lock_timeout") code = 503;
+      request->send(code, "application/json", "{\"error\":\"" + error + "\"}");
       return;
     }
     request->send(202, "application/json", statusJson());
   });
 
   server.on("/api/update/apply", HTTP_POST, [](AsyncWebServerRequest* request) {
-    {
-      StateLock lock;
-      if (!lock.locked()) {
-        request->send(503, "application/json", "{\"error\":\"state_lock_timeout\"}");
-        return;
-      }
-      if (remoteState != RemoteState::AVAILABLE || workerTask != nullptr) {
-        request->send(409, "application/json", "{\"error\":\"remote_update_not_available\"}");
-        return;
-      }
-    }
-
     String error;
-    if (!startWorker(applyWorker, "ota-apply", error)) {
-      setFailed(error);
-      request->send(500, "application/json", statusJson());
+    if (!requestApply(error)) {
+      const int code = error == "state_lock_timeout" ? 503 : 409;
+      request->send(code, "application/json", "{\"error\":\"" + error + "\"}");
       return;
     }
     request->send(202, "application/json", statusJson());

@@ -162,6 +162,7 @@ String statusJson() {
   json += "\"hostname\":\"" + String(ProjectConfig::DEVICE_HOSTNAME) + "\",";
   json += "\"firmware\":" + firmwareVersionJson() + ",";
   json += "\"update\":" + FirmwareUpdate::statusJson() + ",";
+  json += "\"remote_update\":" + RemoteFirmwareUpdate::statusJson() + ",";
   json += "\"state\":\"" + String(stateName(appState)) + "\",";
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
@@ -182,14 +183,56 @@ void mqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   for (unsigned int i = 0; i < length; ++i) {
     payloadString += static_cast<char>(payload[i]);
   }
+  payloadString.trim();
 
   logLine("MQTT RX " + topicString + " => " + payloadString);
 
-  if (payloadString == "ping" || payloadString == "status" ||
-      payloadString == "firmware.status") {
+  if (payloadString == "ping" || payloadString == "status") {
     String response = statusJson();
     mqttClient.publish(topicEvents.c_str(), response.c_str());
-  } else if (payloadString == "reboot") {
+    return;
+  }
+
+  if (payloadString == "firmware.status") {
+    String response = "{\"event\":\"firmware_status\",\"update\":" +
+                      FirmwareUpdate::statusJson() + ",\"remote_update\":" +
+                      RemoteFirmwareUpdate::statusJson() + "}";
+    mqttClient.publish(topicEvents.c_str(), response.c_str());
+    return;
+  }
+
+  if (payloadString == "firmware.check") {
+    mqttClient.publish(topicEvents.c_str(),
+                       "{\"event\":\"firmware_check_rejected\",\"error\":\"manifest_url_required\"}");
+    return;
+  }
+
+  const String checkPrefix = "firmware.check ";
+  if (payloadString.startsWith(checkPrefix)) {
+    String manifestUrl = payloadString.substring(checkPrefix.length());
+    manifestUrl.trim();
+    String error;
+    const bool accepted = RemoteFirmwareUpdate::requestCheck(manifestUrl, error);
+    String response = accepted
+        ? String("{\"event\":\"firmware_check_requested\",\"accepted\":true}")
+        : String("{\"event\":\"firmware_check_requested\",\"accepted\":false,\"error\":\"") +
+              error + "\"}";
+    mqttClient.publish(topicEvents.c_str(), response.c_str());
+    return;
+  }
+
+  if (payloadString == "firmware.update") {
+    String error;
+    const bool accepted = RemoteFirmwareUpdate::requestApply(error);
+    String response = accepted
+        ? String("{\"event\":\"firmware_update_requested\",\"accepted\":true}")
+        : String("{\"event\":\"firmware_update_requested\",\"accepted\":false,\"error\":\"") +
+              error + "\"}";
+    mqttClient.publish(topicEvents.c_str(), response.c_str());
+    return;
+  }
+
+  if (payloadString == "reboot") {
     mqttClient.publish(topicEvents.c_str(), "{\"event\":\"reboot_requested\"}");
     delay(100);
     ESP.restart();
@@ -340,6 +383,28 @@ void startNetworkServices() {
     restartRequestedAt = millis();
   });
 
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+  server.on("/api/test/mqtt/command", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!request->hasParam("command", true)) {
+      request->send(400, "application/json", "{\"error\":\"command_required\"}");
+      return;
+    }
+    if (!mqttClient.connected()) {
+      request->send(503, "application/json", "{\"error\":\"mqtt_not_connected\"}");
+      return;
+    }
+    String command = request->getParam("command", true)->value();
+    command.trim();
+    if (!command.length() || command.length() > 420) {
+      request->send(400, "application/json", "{\"error\":\"command_invalid\"}");
+      return;
+    }
+    const bool ok = mqttClient.publish(topicCommand.c_str(), command.c_str());
+    request->send(ok ? 202 : 500, "application/json",
+                  ok ? "{\"published\":true}" : "{\"published\":false}");
+  });
+#endif
+
   registerFirmwareMetadataRoutes(server);
   FirmwareUpdate::registerRoutes(server);
   RemoteFirmwareUpdate::registerRoutes(server);
@@ -358,7 +423,7 @@ void startNetworkServices() {
     mqttClient.setClient(plainNetworkClient);
   }
   mqttClient.setServer(mqttHost.c_str(), mqttPort);
-  mqttClient.setBufferSize(512);
+  mqttClient.setBufferSize(1024);
   mqttClient.setKeepAlive(30);
   mqttClient.setCallback(mqttMessageReceived);
 
