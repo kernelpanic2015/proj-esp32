@@ -58,4 +58,33 @@ Arduino-ESP32 2.0.17 defines weak hooks `verifyRollbackLater()` and `verifyOta()
 - Runtime remained `ONLINE`; Wi-Fi and MQTT/TLS remained connected; free heap remained about 168 KiB.
 - NVS-backed MQTT configuration survived again.
 
-This test proves that the application now owns `PENDING_VERIFY -> VALID`. The next test is a deliberately failed local validation that must return to the last known-good image without affecting persistent configuration.
+This test proves that the application now owns `PENDING_VERIFY -> VALID`.
+
+## 2026-09-05 — controlled failed validation and bootloader rollback
+
+- Source/last known good: `0.1.3`, build `4`, running `app1`, image state `VALID`.
+- Controlled target: `0.1.4-rollback-test`, build `5`, PlatformIO profile `nodemcu-32s-rollback-test`.
+- Candidate SHA-256 verified before upload: `7a1922b63232cf5d708473f91a4d8920244df6eba522a9ac3a7cad8666007579`.
+- Transport: local Web OTA endpoint `/api/update/upload`.
+- Upload wrote `1156752` bytes and selected `app0` as the boot partition.
+- First reachable target sample (~2 seconds): version `0.1.4-rollback-test`, build `5`, running/boot `app0`, native image state `PENDING_VERIFY`, and `validation_test_forced_failure=true`.
+- The test profile deliberately kept local health invalid until the configured validation timeout.
+- The UpdateService called the ESP-IDF invalid/rollback path; the bootloader then returned to the previous valid image.
+- At the first observed post-rollback sample the device was again `0.1.3`, build `4`, running/boot `app1`, next update `app0`, native image state `VALID`.
+- Post-rollback runtime recovered to `ONLINE` with Wi-Fi connected and MQTT/TLS connected.
+- NVS-backed configuration survived: `mqtt_configured=true` and `mqtt_tls=true`; the device retained its hostname/device identity and LAN configuration.
+- Aurora proof job completed with `ROLLBACK_PROOF_OK` and exit code `0`.
+
+This proves the full controlled lifecycle:
+
+```text
+0.1.3 build 4 / app1 / VALID
+        -> Web OTA
+0.1.4-rollback-test build 5 / app0 / PENDING_VERIFY
+        -> forced local validation failure
+        -> mark invalid + reboot
+        -> bootloader rollback
+0.1.3 build 4 / app1 / VALID / ONLINE
+```
+
+The next OTA security milestone is on-device verification of the signed update package before an image is accepted for installation.
