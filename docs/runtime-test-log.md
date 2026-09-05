@@ -48,3 +48,11 @@ Implementation/build acceptance:
 - production build and controlled Stage 6C test/final OTA profiles compile before physical proof.
 
 Physical acceptance still pending at this checkpoint: signed OTA into the controlled test image, real MQTT disconnect with Wi-Fi/HTTP preserved, observe `RUNNING -> DEGRADED -> RUNNING`, then install the clean no-test-endpoint target image and promote it.
+
+### Stage 6C first physical attempt — partial / corrected
+
+- Signed `0.1.18-remote-test/build 19` installed successfully on `app1` and completed `PENDING_VERIFY -> VALID`.
+- `/api/supervisor` physically reported `RUNNING/OK` with the `connectivity` component `ONLINE/OK`; EventBus remained at zero dropped events.
+- The planned controlled MQTT interruption could not run because the lab-only `/api/test/mqtt/disconnect` route had not actually been inserted into `main.cpp`; the endpoint returned HTTP 404.
+- No production fault occurred. The device remained `ONLINE` with MQTT/TLS connected.
+- The source was corrected before retrying the degradation/recovery proof, and test build numbers were advanced so monotonic OTA ordering remains valid.

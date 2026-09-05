@@ -273,3 +273,6 @@ ComponentRegistry -> Supervisor.evaluate() -> arduino-fsm
 TaskScheduler owns the 1 s evaluation cadence. State transitions are posted to the bounded EventBus as `SupervisorStateChanged`, keeping the Supervisor observable without allowing it to reach into component internals. `/api/supervisor` exposes the aggregate state, counts per health class, transition timestamp and evaluation count. The same object is embedded into `/api/status` and therefore existing MQTT telemetry.
 
 Stage 6C includes a lab-only MQTT disconnect endpoint in the already test-gated build profile. It suppresses MQTT reconnect briefly so the physical device can prove `RUNNING -> DEGRADED -> RUNNING` while Wi-Fi and HTTP remain available. Production/default builds do not expose this endpoint.
+
+
+Stage 6C proof-note: the first signed lab image physically validated Supervisor `RUNNING/OK`, but the controlled MQTT-disconnect route was missing due to an integration patch mismatch. The proof was stopped without simulating success; the route and `/api/status.supervisor` embedding were corrected and the retry uses fresh monotonic builds.

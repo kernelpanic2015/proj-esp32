@@ -318,3 +318,8 @@ After every validated change:
 ## Stage 6C implementation checkpoint
 
 The Supervisor FSM is implemented as a real `arduino-fsm` machine and scheduled cooperatively by TaskScheduler. It aggregates only `ComponentRegistry` health, publishes state changes through EventBus, exposes `/api/supervisor`, and is embedded in `/api/status`/MQTT telemetry. The next safe action is the controlled signed physical proof: lab test image -> real MQTT disconnect -> Supervisor `RUNNING -> DEGRADED -> RUNNING` -> clean target image with the test endpoint absent.
+
+
+## Stage 6C live lab state after first proof attempt
+
+Canonical source baseline remains `0.1.17/build 18`, but the physical ESP32 is temporarily running the signed lab image `0.1.18-remote-test/build 19` on `app1`, native state `VALID`, `ONLINE` with MQTT/TLS connected. Supervisor is physically active and reports `RUNNING/OK`. The first degradation test stopped safely because the intended test-only MQTT disconnect endpoint returned 404; source is corrected and the retry uses higher monotonic builds.

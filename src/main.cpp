@@ -258,6 +258,7 @@ String statusJson() {
   json += "\"update_policy\":" + FirmwareUpdatePolicy::statusJson() + ",";
   json += "\"update_scheduler\":" + FirmwareUpdateScheduler::statusJson() + ",";
   json += "\"components\":" + runtimeComponents.statusJson() + ",";
+  json += "\"supervisor\":" + runtimeSupervisor.statusJson() + ",";
   json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
   json += "\"state\":\"" + String(stateName(appState)) + "\",";
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
@@ -520,6 +521,13 @@ void startNetworkServices() {
     const bool ok = mqttClient.publish(topicCommand.c_str(), command.c_str());
     request->send(ok ? 202 : 500, "application/json",
                   ok ? "{\"published\":true}" : "{\"published\":false}");
+  });
+
+  server.on("/api/test/mqtt/disconnect", HTTP_POST, [](AsyncWebServerRequest* request) {
+    mqttReconnectSuppressedUntil = millis() + 8000UL;
+    mqttClient.disconnect();
+    request->send(202, "application/json",
+                  "{\"accepted\":true,\"reconnect_suppressed_ms\":8000}");
   });
 #endif
 
