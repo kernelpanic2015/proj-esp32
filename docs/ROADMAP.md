@@ -149,15 +149,17 @@ The ESP32 fetches the signed manifest and firmware directly over HTTPS.
 
 Automatic policy compares remote and local monotonic build numbers at a configured interval. A failed update does not disable normal local control.
 
-## Stage 6 — Core modular runtime
+## Stage 6 — Core modular runtime [in progress]
 
 Introduce:
 
-- `Component` interface;
-- `ComponentRegistry`;
-- common `ComponentHealth` model;
-- internal event bus;
-- `Supervisor` FSM;
+- [x] TaskScheduler cooperative runtime alongside `arduino-fsm`;
+- [x] `Component` interface;
+- [x] `ComponentRegistry`;
+- [x] common `ComponentHealth` model;
+- [x] bounded internal event bus foundation;
+- [ ] wire initial real components into the registry;
+- [ ] `Supervisor` FSM;
 - standardized fault metadata;
 - generic serialization for API/MQTT/UI.
 

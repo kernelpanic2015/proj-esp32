@@ -3,13 +3,15 @@
 #include <Arduino.h>
 
 class AsyncWebServer;
+class Scheduler;
 
 namespace FirmwareUpdateScheduler {
 
-// Boot-relative, nonblocking scheduler for automatic update checks.
-// It never auto-applies firmware and never gates local device control.
-void begin();
-void tick(bool networkAvailable);
+// Cooperative automatic-update scheduler. TaskScheduler owns timing;
+// the remote UpdateManager still owns check/apply and the scheduler remains
+// check-only. Local control never depends on this service.
+void begin(Scheduler& scheduler);
+void setNetworkAvailable(bool available);
 String statusJson();
 void registerRoutes(AsyncWebServer& server);
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ESP_HOST=${ESP_HOST:-proj-esp32.local}
-FIXTURE_PORT=${FIXTURE_PORT:-8768}
+FIXTURE_PORT=${FIXTURE_PORT:-8769}
 KEYDIR=${KEYDIR:-"$HOME/.config/proj-esp32/keys"}
 BASE=${BASE:-"$HOME/Downloads/proj-esp32-ota/scheduler-proof"}
 TRANS="$BASE/transition"
@@ -59,8 +59,8 @@ echo "VERSION=$V" >> "$OUT"
 echo "UPDATE=$U" >> "$OUT"
 echo "STATUS=$S" >> "$OUT"
 echo "POLICY=$P" >> "$OUT"
-grep -q '"version":"0.1.12"' <<<"$V"
-grep -q '"build":13' <<<"$V"
+grep -q '"version":"0.1.16"' <<<"$V"
+grep -q '"build":17' <<<"$V"
 grep -q '"running_partition":"app1"' <<<"$U"
 grep -q '"image_state":"VALID"' <<<"$U"
 grep -q '"mqtt":true' <<<"$S"
@@ -70,8 +70,8 @@ echo '=== BUILD AND SIGN SCHEDULER-CAPABLE IMAGES ===' >> "$OUT"
 ./scripts/pio run -e nodemcu-32s-remote-target-test >/tmp/scheduler-proof-target-build.log 2>&1
 rm -rf "$BASE"
 mkdir -p "$TRANS" "$TARGET"
-python3 scripts/release_manifest.py --firmware .pio/build/nodemcu-32s-remote-update-test/firmware.bin --output "$TRANS" --model proj-esp32-35 --hardware-revision 1 --version 0.1.13-remote-test --build 14 --channel dev --private-key "$KEYDIR/update-signing-private.pem" --public-key "$KEYDIR/update-signing-public.pem" >/dev/null
-python3 scripts/release_manifest.py --firmware .pio/build/nodemcu-32s-remote-target-test/firmware.bin --output "$TARGET" --model proj-esp32-35 --hardware-revision 1 --version 0.1.14 --build 15 --channel dev --private-key "$KEYDIR/update-signing-private.pem" --public-key "$KEYDIR/update-signing-public.pem" >/dev/null
+python3 scripts/release_manifest.py --firmware .pio/build/nodemcu-32s-remote-update-test/firmware.bin --output "$TRANS" --model proj-esp32-35 --hardware-revision 1 --version 0.1.15-remote-test --build 16 --channel dev --private-key "$KEYDIR/update-signing-private.pem" --public-key "$KEYDIR/update-signing-public.pem" >/dev/null
+python3 scripts/release_manifest.py --firmware .pio/build/nodemcu-32s-remote-target-test/firmware.bin --output "$TARGET" --model proj-esp32-35 --hardware-revision 1 --version 0.1.16 --build 17 --channel dev --private-key "$KEYDIR/update-signing-private.pem" --public-key "$KEYDIR/update-signing-public.pem" >/dev/null
 openssl dgst -sha256 -verify "$KEYDIR/update-signing-public.pem" -signature "$TRANS/manifest.sig" "$TRANS/manifest.json" >/dev/null
 openssl dgst -sha256 -verify "$KEYDIR/update-signing-public.pem" -signature "$TARGET/manifest.sig" "$TARGET/manifest.json" >/dev/null
 echo "TRANSITION_SHA=$(sha256sum "$TRANS/firmware.bin" | awk '{print $1}')" >> "$OUT"
@@ -83,7 +83,7 @@ CODE=$(curl -sS --max-time 15 -o /tmp/scheduler-transition-prepare.json -w '%{ht
 echo "PREPARE_HTTP=$CODE" >> "$OUT"; cat /tmp/scheduler-transition-prepare.json >> "$OUT"; echo >> "$OUT"; [[ "$CODE" == 200 ]]
 CODE=$(curl -sS --max-time 90 -o /tmp/scheduler-transition-upload.json -w '%{http_code}' -F firmware=@"$TRANS/firmware.bin" "http://$ESP_HOST/api/update/upload")
 echo "UPLOAD_HTTP=$CODE" >> "$OUT"; cat /tmp/scheduler-transition-upload.json >> "$OUT"; echo >> "$OUT"; [[ "$CODE" == 200 ]]
-wait_for_transition '0.1.13-remote-test' 14 app0
+wait_for_transition '0.1.15-remote-test' 16 app0
 
 SCH=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/update/scheduler")
 echo "SCHEDULER_INITIAL=$SCH" >> "$OUT"
@@ -118,7 +118,7 @@ echo '=== REBOOT WITH ENABLED POLICY ===' >> "$OUT"
 CODE=$(curl -sS --max-time 5 -o /tmp/scheduler-reboot.json -w '%{http_code}' --data-urlencode command=reboot "http://$ESP_HOST/api/test/mqtt/command")
 echo "REBOOT_PUBLISH_HTTP=$CODE" >> "$OUT"; cat /tmp/scheduler-reboot.json >> "$OUT"; echo >> "$OUT"; [[ "$CODE" == 202 ]]
 sleep 3
-wait_for_online '0.1.13-remote-test' 14
+wait_for_online '0.1.15-remote-test' 16
 P=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/update/policy")
 SCH=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/update/scheduler")
 echo "POLICY_AFTER_REBOOT=$P" >> "$OUT"
@@ -134,7 +134,7 @@ for _ in $(seq 1 90); do
   R=$(curl -fsS --max-time 2 "http://$ESP_HOST/api/update/remote/status" 2>/dev/null || true)
   U=$(curl -fsS --max-time 2 "http://$ESP_HOST/api/update/status" 2>/dev/null || true)
   SCH=$(curl -fsS --max-time 2 "http://$ESP_HOST/api/update/scheduler" 2>/dev/null || true)
-  if grep -q '"state":"AVAILABLE"' <<<"$R" && grep -q '"package_prepared":true' <<<"$U" && grep -q '"candidate_build":15' <<<"$U" && grep -Eq '"attempt_count":[1-9][0-9]*' <<<"$SCH" && grep -Eq '"accepted_count":[1-9][0-9]*' <<<"$SCH"; then
+  if grep -q '"state":"AVAILABLE"' <<<"$R" && grep -q '"package_prepared":true' <<<"$U" && grep -q '"candidate_build":17' <<<"$U" && grep -Eq '"attempt_count":[1-9][0-9]*' <<<"$SCH" && grep -Eq '"accepted_count":[1-9][0-9]*' <<<"$SCH"; then
     AVAILABLE=1
     echo "AUTO_REMOTE_AVAILABLE=$R" >> "$OUT"
     echo "AUTO_PREPARED=$U" >> "$OUT"
@@ -150,7 +150,7 @@ grep -q '"last_result":"available"' <<<"$P"
 echo '=== OPERATOR APPLY; SCHEDULER MUST NOT AUTO-APPLY ===' >> "$OUT"
 CODE=$(curl -sS --max-time 5 -o /tmp/scheduler-apply.json -w '%{http_code}' -X POST "http://$ESP_HOST/api/update/apply")
 echo "APPLY_HTTP=$CODE" >> "$OUT"; cat /tmp/scheduler-apply.json >> "$OUT"; echo >> "$OUT"; [[ "$CODE" == 202 ]]
-wait_for_transition '0.1.14' 15 app1
+wait_for_transition '0.1.16' 17 app1
 
 echo '=== DISABLE TEMPORARY FIXTURE POLICY ===' >> "$OUT"
 P=$(curl -fsS --max-time 5 "http://$ESP_HOST/api/update/policy")
@@ -172,8 +172,8 @@ echo "UPDATE=$U" >> "$OUT"
 echo "POLICY_FINAL=$P" >> "$OUT"
 echo "REMOTE_FINAL=$R" >> "$OUT"
 echo "SCHEDULER_FINAL=$SCH" >> "$OUT"
-grep -q '"version":"0.1.14"' <<<"$S"
-grep -q '"build":15' <<<"$S"
+grep -q '"version":"0.1.16"' <<<"$S"
+grep -q '"build":17' <<<"$S"
 grep -q '"state":"ONLINE"' <<<"$S"
 grep -q '"wifi":true' <<<"$S"
 grep -q '"mqtt":true' <<<"$S"
@@ -187,5 +187,5 @@ CODE=$(curl -sS --max-time 5 -o /tmp/scheduler-loopback-final.json -w '%{http_co
 echo "MQTT_LOOPBACK_FINAL_HTTP=$CODE" >> "$OUT"
 [[ "$CODE" == 404 ]]
 
-echo AUTOMATIC_UPDATE_CHECK_SCHEDULER_PROOF_OK >> "$OUT"
+echo TASKSCHEDULER_AUTOMATIC_UPDATE_PROOF_OK >> "$OUT"
 cat "$OUT"

@@ -9,6 +9,7 @@
 #include <PubSubClient.h>
 #include <Preferences.h>
 #include <Fsm.h>
+#include <TaskScheduler.h>
 
 #define ESP_DRD_USE_EEPROM true
 #define ESP_DRD_USE_SPIFFS false
@@ -47,6 +48,7 @@ PubSubClient mqttClient;
 WiFiManager wifiManager;
 Preferences preferences;
 DoubleResetDetector* drd = nullptr;
+Scheduler cooperativeScheduler;
 
 bool webStarted = false;
 bool networkServicesStarted = false;
@@ -478,7 +480,7 @@ void setup() {
   if (!FirmwareUpdatePolicy::begin()) {
     Serial.println("UPDATE_POLICY_NVS_INIT_FAILED");
   }
-  FirmwareUpdateScheduler::begin();
+  FirmwareUpdateScheduler::begin(cooperativeScheduler);
 
   WiFi.mode(WIFI_STA);
   deviceId = buildDeviceId();
@@ -537,6 +539,9 @@ void loop() {
   wifiManager.process();
   machine.run_machine();
   FirmwareUpdate::tick(preferencesReady);
+  FirmwareUpdateScheduler::setNetworkAvailable(
+      WiFi.status() == WL_CONNECTED && !wifiManager.getConfigPortalActive());
+  cooperativeScheduler.execute();
 
   const bool portalActive = wifiManager.getConfigPortalActive();
 
@@ -555,7 +560,6 @@ void loop() {
   const bool wifiUp = WiFi.status() == WL_CONNECTED;
 
   if (!wifiUp) {
-    FirmwareUpdateScheduler::tick(false);
     if (appState == AppState::WIFI_CONNECTING) {
       machine.trigger(EVT_WIFI_DOWN);
     } else if (appState == AppState::ONLINE) {
@@ -575,7 +579,6 @@ void loop() {
   }
 
   startNetworkServices();
-  FirmwareUpdateScheduler::tick(true);
   WebSerial.loop();
   mqttClient.loop();
 

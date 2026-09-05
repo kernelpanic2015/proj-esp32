@@ -198,3 +198,31 @@ TFT / touch / sensors / relays
 ```
 
 The ESP32 is the physical edge node, not the AI runtime itself.
+
+
+## Cooperative runtime: TaskScheduler + FSM (Stage 6A)
+
+The project now adopts `arkhipenko/TaskScheduler` alongside `jonblack/arduino-fsm`.
+Their responsibilities are intentionally different:
+
+- **TaskScheduler = when work becomes eligible to run**;
+- **FSM = current state and whether that work is legal/meaningful**;
+- **EventBus = what happened**;
+- **Component = who owns the behavior**;
+- **Supervisor = aggregate health/recovery policy**;
+- **RuleEngine = desired functional outcome**.
+
+A task may remain disabled until work is meaningful. Delayed activation/restart is a
+first-class mechanism for sensor warm-up, actuator settling, retry/backoff and
+minimum on/off times. Components should prefer TaskScheduler timing primitives to
+hand-rolled `millis()` polling as they are migrated.
+
+The first migration is the automatic firmware-check scheduler. Its low-frequency
+policy watcher is always enabled, while the actual remote-check task is disabled
+until persisted `policy.enabled=true`; enabling the policy arms it with a delayed
+first run. The OTA path remains check-only and does not auto-apply firmware.
+
+Stage 6 core contracts now exist under `include/core` / `src/core`:
+`Component`, `ComponentHealth`, `ComponentRegistry`, and a bounded `EventBus`.
+The registry is discovery/health metadata, not a polling loop: execution cadence
+belongs to TaskScheduler.

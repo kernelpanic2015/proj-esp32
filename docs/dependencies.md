@@ -135,3 +135,16 @@ Before production use:
 ## Secret-handling rule
 
 No Wi-Fi credentials, MQTT passwords, API keys, private keys or credential-bearing URLs should be committed to this repository.
+
+
+## TaskScheduler
+
+- Upstream: `arkhipenko/TaskScheduler`
+- Baseline: 4.0.8
+- Role: cooperative timing/execution eligibility for component work.
+- Kept alongside `arduino-fsm`: TaskScheduler decides **when**; FSM decides
+  **state/behavior**. Tasks should be disabled when no work is meaningful and
+  use delayed enable/restart for warm-up, settling, retry and backoff.
+- This does not make blocking callbacks safe. Every cooperative callback must
+  return quickly; genuinely blocking/heavy work remains a candidate for a
+  FreeRTOS worker that reports completion through events.

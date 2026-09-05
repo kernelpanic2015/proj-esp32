@@ -4,6 +4,7 @@
 #include "update_policy.h"
 
 #include <ESPAsyncWebServer.h>
+#include <TaskScheduler.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/semphr.h>
 #include <stdint.h>
@@ -12,6 +13,7 @@ namespace {
 
 SemaphoreHandle_t schedulerMutex = nullptr;
 bool schedulerReady = false;
+bool networkAvailable = false;
 bool schedulerArmed = false;
 bool observedEnabled = false;
 uint32_t observedRevision = UINT32_MAX;
@@ -23,7 +25,14 @@ uint32_t attemptCount = 0;
 uint32_t acceptedCount = 0;
 String lastRequestResult = "never";
 
+constexpr uint32_t POLICY_WATCH_INTERVAL_MS = 1000;
 constexpr uint32_t RETRY_DELAY_MS = 15000;
+
+void policyWatchCallback();
+void automaticCheckCallback();
+
+Task policyWatchTask(POLICY_WATCH_INTERVAL_MS, TASK_FOREVER, &policyWatchCallback);
+Task automaticCheckTask(60000, TASK_FOREVER, &automaticCheckCallback);
 
 class SchedulerLock {
  public:
@@ -39,58 +48,63 @@ class SchedulerLock {
   bool locked_;
 };
 
-bool timeReached(uint32_t now, uint32_t target) {
-  return static_cast<int32_t>(now - target) >= 0;
+uint32_t intervalMs(uint32_t seconds) {
+  return seconds * 1000UL;
 }
 
-uint32_t intervalMs(uint32_t intervalSeconds) {
-  // Policy validation currently caps this at 7 days, safely inside uint32_t ms.
-  return intervalSeconds * 1000UL;
-}
-
-void applyPolicySnapshot(uint32_t now, bool enabled, uint32_t intervalSeconds,
-                         uint32_t revision) {
+void disarm(const String& reason) {
+  automaticCheckTask.disable();
   SchedulerLock lock;
   if (!lock.locked()) return;
-
-  const bool changed = revision != observedRevision ||
-                       enabled != observedEnabled ||
-                       intervalSeconds != observedIntervalSeconds;
-  if (!changed) return;
-
-  observedRevision = revision;
-  observedEnabled = enabled;
-  observedIntervalSeconds = intervalSeconds;
-  schedulerArmed = enabled;
-  nextDueMs = enabled ? now + intervalMs(intervalSeconds) : 0;
-  lastRequestResult = enabled ? "armed" : "disabled";
-}
-
-}  // namespace
-
-namespace FirmwareUpdateScheduler {
-
-void begin() {
-  if (!schedulerMutex) schedulerMutex = xSemaphoreCreateMutex();
-  SchedulerLock lock;
-  if (!lock.locked()) return;
-
-  schedulerReady = true;
   schedulerArmed = false;
-  observedEnabled = false;
-  observedRevision = UINT32_MAX;
-  observedIntervalSeconds = 0;
   nextDueMs = 0;
-  lastAttemptMs = 0;
-  lastAcceptedMs = 0;
-  attemptCount = 0;
-  acceptedCount = 0;
-  lastRequestResult = "never";
+  lastRequestResult = reason;
 }
 
-void tick(bool networkAvailable) {
-  if (!schedulerReady) return;
+void applyPolicy(bool enabled, uint32_t intervalSeconds, uint32_t revision) {
+  bool changed = false;
+  {
+    SchedulerLock lock;
+    if (!lock.locked()) return;
+    changed = revision != observedRevision || enabled != observedEnabled ||
+              intervalSeconds != observedIntervalSeconds;
+    if (!changed) return;
+    observedRevision = revision;
+    observedEnabled = enabled;
+    observedIntervalSeconds = intervalSeconds;
+  }
 
+  if (!enabled) {
+    disarm("disabled");
+    return;
+  }
+
+  const uint32_t delayMs = intervalMs(intervalSeconds);
+  automaticCheckTask.setInterval(delayMs);
+  automaticCheckTask.restartDelayed(delayMs);
+
+  SchedulerLock lock;
+  if (!lock.locked()) return;
+  schedulerArmed = true;
+  nextDueMs = millis() + delayMs;
+  lastRequestResult = "armed";
+}
+
+void policyWatchCallback() {
+  bool enabled = false;
+  String manifestUrl;
+  uint32_t intervalSeconds = 0;
+  uint32_t revision = 0;
+  String error;
+  if (!FirmwareUpdatePolicy::automaticCheckConfig(
+          enabled, manifestUrl, intervalSeconds, revision, error)) {
+    disarm(error.length() ? error : "policy_unavailable");
+    return;
+  }
+  applyPolicy(enabled, intervalSeconds, revision);
+}
+
+void automaticCheckCallback() {
   bool enabled = false;
   String manifestUrl;
   uint32_t intervalSeconds = 0;
@@ -98,30 +112,41 @@ void tick(bool networkAvailable) {
   String policyError;
   if (!FirmwareUpdatePolicy::automaticCheckConfig(
           enabled, manifestUrl, intervalSeconds, revision, policyError)) {
+    disarm(policyError.length() ? policyError : "policy_unavailable");
+    return;
+  }
+  if (!enabled) {
+    disarm("disabled");
+    return;
+  }
+
+  bool haveNetwork = false;
+  {
+    SchedulerLock lock;
+    if (!lock.locked()) return;
+    haveNetwork = networkAvailable;
+  }
+
+  const uint32_t now = millis();
+  const uint32_t normalIntervalMs = intervalMs(intervalSeconds);
+  automaticCheckTask.setInterval(normalIntervalMs);
+
+  if (!haveNetwork) {
+    automaticCheckTask.restartDelayed(RETRY_DELAY_MS);
     SchedulerLock lock;
     if (lock.locked()) {
-      schedulerArmed = false;
-      lastRequestResult = policyError.length() ? policyError : "policy_unavailable";
+      nextDueMs = now + RETRY_DELAY_MS;
+      lastRequestResult = "network_unavailable";
     }
     return;
   }
 
-  const uint32_t now = millis();
-  applyPolicySnapshot(now, enabled, intervalSeconds, revision);
-  if (!enabled || !networkAvailable) return;
-
-  bool due = false;
   {
     SchedulerLock lock;
     if (!lock.locked()) return;
-    due = schedulerArmed && timeReached(now, nextDueMs);
-    if (!due) return;
-
-    // Reserve the normal next slot before leaving the lock. A transient trigger
-    // rejection can shorten this to RETRY_DELAY_MS below.
     lastAttemptMs = now;
     ++attemptCount;
-    nextDueMs = now + intervalMs(intervalSeconds);
+    nextDueMs = now + normalIntervalMs;
     lastRequestResult = "requesting";
   }
 
@@ -138,11 +163,46 @@ void tick(bool networkAvailable) {
   }
 
   lastRequestResult = error.length() ? error : "request_rejected";
-  // A busy update service is not a policy failure. Retry soon in RAM without
-  // changing policy revision or generating an NVS write.
   if (error == "remote_update_busy" || error == "state_lock_timeout") {
+    automaticCheckTask.restartDelayed(RETRY_DELAY_MS);
     nextDueMs = now + RETRY_DELAY_MS;
   }
+}
+
+}  // namespace
+
+namespace FirmwareUpdateScheduler {
+
+void begin(Scheduler& scheduler) {
+  if (!schedulerMutex) schedulerMutex = xSemaphoreCreateMutex();
+  {
+    SchedulerLock lock;
+    if (!lock.locked()) return;
+    schedulerReady = true;
+    networkAvailable = false;
+    schedulerArmed = false;
+    observedEnabled = false;
+    observedRevision = UINT32_MAX;
+    observedIntervalSeconds = 0;
+    nextDueMs = 0;
+    lastAttemptMs = 0;
+    lastAcceptedMs = 0;
+    attemptCount = 0;
+    acceptedCount = 0;
+    lastRequestResult = "never";
+  }
+
+  scheduler.addTask(policyWatchTask);
+  scheduler.addTask(automaticCheckTask);
+  automaticCheckTask.disable();
+  policyWatchTask.enable();
+  // Apply persisted policy immediately instead of waiting one watch interval.
+  policyWatchCallback();
+}
+
+void setNetworkAvailable(bool available) {
+  SchedulerLock lock;
+  if (lock.locked()) networkAvailable = available;
 }
 
 String statusJson() {
