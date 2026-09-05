@@ -158,6 +158,7 @@ Introduce:
 - [x] `ComponentRegistry`;
 - [x] common `ComponentHealth` model;
 - [x] bounded internal event bus foundation;
+- [x] physically prove first TaskScheduler migration using the automatic OTA check path;
 - [ ] wire initial real components into the registry;
 - [ ] `Supervisor` FSM;
 - standardized fault metadata;

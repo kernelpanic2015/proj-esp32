@@ -226,3 +226,7 @@ Stage 6 core contracts now exist under `include/core` / `src/core`:
 `Component`, `ComponentHealth`, `ComponentRegistry`, and a bounded `EventBus`.
 The registry is discovery/health metadata, not a polling loop: execution cadence
 belongs to TaskScheduler.
+
+### First physical TaskScheduler migration proof
+
+The automatic firmware-check scheduler was migrated from hand-written `millis()` polling to TaskScheduler. A controlled `0.1.15-remote-test/build 16` image persisted an enabled 60 s policy, rebooted, re-armed the delayed task, and reached remote `AVAILABLE` at about 60.5 s without any manual or MQTT `firmware.check`. `attempt_count=1` and `accepted_count=1` were observed. Only an explicit operator apply installed `0.1.16/build 17`, which completed `PENDING_VERIFY -> VALID`. This validates the intended rule that scheduled work may stay disabled until meaningful and that automatic scheduling does not imply automatic actuation/install.

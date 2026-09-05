@@ -236,3 +236,14 @@ This proves NVS update-policy persistence independently across reboot and A/B OT
 - Final image remained ONLINE with Wi-Fi and MQTT/TLS, restored HTTPS-only remote policy, and removed the lab MQTT loopback endpoint.
 
 This closes Stage 5D: automatic checks are nonblocking, policy-driven, reboot-safe, and reuse the exact signed remote UpdateManager path without introducing an automatic apply path.
+
+## 2026-09-05 — TaskScheduler automatic-check migration regression
+
+- Baseline: `0.1.14/build 15`, `app1/VALID`, ONLINE with MQTT/TLS.
+- Stage 6A replaced the automatic update scheduler's hand-written timing with `TaskScheduler`; the actual check task remains disabled unless persisted policy enables it.
+- Installed signed transition image `0.1.15-remote-test/build 16` to `app0`; observed `PENDING_VERIFY -> VALID`.
+- Enabled a 60 s persisted HTTPS policy and rebooted. The scheduler reconstructed its delayed first run from policy revision `5`.
+- No Web/MQTT `firmware.check` was sent. At about `60546 ms`, the automatic task fired and reached `AVAILABLE` for signed candidate `0.1.16/build 17`; `attempt_count=1`, `accepted_count=1`, `last_request_result=accepted`.
+- Scheduler did not auto-apply. Explicit operator apply installed `0.1.16/build 17` to `app1`; observed `PENDING_VERIFY -> VALID`.
+- Final normal image restored HTTPS-only remote policy, remained ONLINE with Wi-Fi and MQTT/TLS, and the lab MQTT loopback endpoint returned 404.
+- The proof artifact ended `TASKSCHEDULER_AUTOMATIC_UPDATE_PROOF_OK`; a separate reconciliation job re-read the artifact and healthy physical runtime after the original wrapper reported exit code 1.

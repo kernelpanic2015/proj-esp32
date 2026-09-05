@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after the automatic update scheduler proof:
+Current physical device state after the Stage 6A TaskScheduler migration proof:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.14`
-- build: `15`
+- firmware: `0.1.16`
+- build: `17`
 - channel: `dev`
 - running partition: `app1`
 - boot partition: `app1`
@@ -58,9 +58,13 @@ Current physical device state after the automatic update scheduler proof:
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 
-Signed Web OTA, remote check/apply, MQTT triggers, persisted NVS policy and the automatic check scheduler now share the same UpdateManager path. Automatic scheduling is check-only: it never applies a firmware image without an explicit operator/control-plane apply request. Network failure can delay or fail an update check but cannot stop local control.
+`arkhipenko/TaskScheduler` 4.0.8 is now adopted alongside `jonblack/arduino-fsm`. TaskScheduler owns **when work is eligible**; FSM owns **state and behavior**. Tasks are expected to remain disabled until work is meaningful, and delayed enable/restart is the preferred mechanism for warm-up, settling, retry/backoff and minimum on/off timing.
 
-Latest normal build remains within the 1728 KiB OTA slot with roughly 68-70% flash occupancy and about 16-17% static RAM usage.
+The first migrated production path is the automatic firmware check. Physical proof showed persisted policy -> delayed TaskScheduler activation -> automatic signed remote check after reboot, with no manual/MQTT check command and no automatic apply. Final `0.1.16/build 17` remained ONLINE and `VALID`.
+
+Stage 6 foundations under `include/core` / `src/core` now include `Component`, `ComponentHealth`, `ComponentRegistry`, and a bounded `EventBus`; they compile but real services/components are not yet registered.
+
+Latest normal build remains within the 1728 KiB OTA slot at about 68.8% flash and 16.6% static RAM.
 
 ## Flash layout — validated
 
@@ -287,19 +291,21 @@ The firmware base must remain autonomous and fault-tolerant:
 - configured rules/schedules must continue without Internet or MQTT;
 - sensor/actuator failures are isolated by component rather than stopping the whole device;
 - multiple FSMs cooperate without blocking;
+- TaskScheduler owns cooperative timing/eligibility; FSMs own state/behavior;
+- tasks stay disabled when work is not meaningful and may be activated/restarted with delay;
 - future components expose standard state/health metadata to TFT, Preact, MQTT and APIs;
 - internal flash holds firmware A/B, NVS and LittleFS recovery assets;
 - microSD will hold the compiled Preact frontend, logs, data and larger UI assets.
 
 ## Immediate next steps
 
-1. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
-2. harden MQTT with LWT plus reconnect backoff/jitter;
-3. begin Stage 6 modular runtime (`ComponentRegistry`, common health model, EventBus and Supervisor);
-4. add explicit component/update health metadata using the common model;
-5. mount LittleFS and add minimal recovery UI;
-6. implement local ConfigurationStore/RuleEngine/Scheduler without connectivity dependencies;
-7. proceed to DS3231/TFT/touch/microSD only after physical pin mapping confirmation.
+1. wire the first real service components into `ComponentRegistry` and expose their common health metadata;
+2. add the Stage 6 `Supervisor` FSM and schedule it cooperatively with TaskScheduler;
+3. schedule bounded `EventBus.process()` and begin routing state-change events through it;
+4. gradually migrate eligible periodic/retry work (MQTT reconnect/telemetry and later sensors) from hand-written timing to TaskScheduler + FSM;
+5. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
+6. harden MQTT with LWT plus reconnect backoff/jitter;
+7. continue toward ConfigurationStore/RuleEngine/local Scheduler and later DS3231/TFT/touch/microSD.
 
 ## Source-of-truth invariant
 
