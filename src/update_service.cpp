@@ -1,4 +1,5 @@
 #include "update_service.h"
+#include "ota_state_names.h"
 
 #include <ESPAsyncWebServer.h>
 #include <Update.h>
@@ -51,6 +52,19 @@ void failUpdate(const String& reason) {
   setState(UpdateState::FAILED);
 }
 
+String partitionLabel(const esp_partition_t* partition) {
+  return partition ? String(partition->label) : String("unknown");
+}
+
+String runningImageStateName() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  esp_ota_img_states_t imageState;
+  if (!running || esp_ota_get_state_partition(running, &imageState) != ESP_OK) {
+    return "UNAVAILABLE";
+  }
+  return String(otaImageStateName(imageState));
+}
+
 String updatePage() {
   String page = "<!doctype html><html><head><meta charset='utf-8'>";
   page += "<meta name='viewport' content='width=device-width,initial-scale=1'>";
@@ -87,14 +101,23 @@ void begin(bool criticalStorageReady) {
 }
 
 String statusJson() {
+  const esp_partition_t* running = esp_ota_get_running_partition();
+  const esp_partition_t* boot = esp_ota_get_boot_partition();
+  const esp_partition_t* nextUpdate = esp_ota_get_next_update_partition(nullptr);
+
   String json = "{";
   json += "\"state\":\"" + String(stateName(updateState)) + "\",";
   json += "\"received_bytes\":" + String(receivedBytes) + ",";
   json += "\"error\":\"" + lastError + "\",";
-  json += "\"running_partition\":\"";
-  const esp_partition_t* running = esp_ota_get_running_partition();
-  json += running ? String(running->label) : String("unknown");
-  json += "\"";
+  json += "\"running_partition\":\"" + partitionLabel(running) + "\",";
+  json += "\"boot_partition\":\"" + partitionLabel(boot) + "\",";
+  json += "\"next_update_partition\":\"" + partitionLabel(nextUpdate) + "\",";
+  json += "\"image_state\":\"" + runningImageStateName() + "\",";
+#ifdef CONFIG_BOOTLOADER_APP_ROLLBACK_ENABLE
+  json += "\"rollback_enabled\":true";
+#else
+  json += "\"rollback_enabled\":false";
+#endif
   json += "}";
   return json;
 }
