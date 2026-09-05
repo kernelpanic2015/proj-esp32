@@ -1,5 +1,6 @@
 #include "remote_update_service.h"
 
+#include "firmware_package_verifier.h"
 #include "update_service.h"
 
 #include <ESPAsyncWebServer.h>
@@ -7,16 +8,16 @@
 #include <WiFi.h>
 #include <WiFiClient.h>
 #include <WiFiClientSecure.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/semphr.h>
 #include <mbedtls/base64.h>
 
 namespace {
 
 enum class RemoteState {
   IDLE,
-  CHECK_QUEUED,
   CHECKING,
   AVAILABLE,
-  APPLY_QUEUED,
   DOWNLOADING,
   FAILED
 };
@@ -26,7 +27,7 @@ String manifestUrl;
 String baseUrl;
 String lastError;
 TaskHandle_t workerTask = nullptr;
-portMUX_TYPE stateMux = portMUX_INITIALIZER_UNLOCKED;
+SemaphoreHandle_t stateMutex = nullptr;
 
 constexpr uint32_t HTTP_TIMEOUT_MS = 10000;
 constexpr size_t MAX_MANIFEST_BYTES = 2048;
@@ -39,13 +40,20 @@ constexpr bool ALLOW_HTTP = true;
 constexpr bool ALLOW_HTTP = false;
 #endif
 
+class StateLock {
+ public:
+  StateLock() : locked_(stateMutex && xSemaphoreTake(stateMutex, pdMS_TO_TICKS(250)) == pdTRUE) {}
+  ~StateLock() { if (locked_) xSemaphoreGive(stateMutex); }
+  bool locked() const { return locked_; }
+ private:
+  bool locked_;
+};
+
 const char* stateName(RemoteState state) {
   switch (state) {
     case RemoteState::IDLE: return "IDLE";
-    case RemoteState::CHECK_QUEUED: return "CHECK_QUEUED";
     case RemoteState::CHECKING: return "CHECKING";
     case RemoteState::AVAILABLE: return "AVAILABLE";
-    case RemoteState::APPLY_QUEUED: return "APPLY_QUEUED";
     case RemoteState::DOWNLOADING: return "DOWNLOADING";
     case RemoteState::FAILED: return "FAILED";
   }
@@ -53,10 +61,11 @@ const char* stateName(RemoteState state) {
 }
 
 bool validManifestUrl(const String& url) {
-  if (url.length() < 16 || url.length() > 384) return false;
-  if (url.startsWith("https://")) return url.endsWith("/manifest.json");
-  if (url.startsWith("http://")) return ALLOW_HTTP && url.endsWith("/manifest.json");
-  return false;
+  if (url.length() < 16 || url.length() > 384 || !url.endsWith("/manifest.json")) {
+    return false;
+  }
+  if (url.startsWith("https://")) return true;
+  return ALLOW_HTTP && url.startsWith("http://");
 }
 
 String deriveBaseUrl(const String& url) {
@@ -68,8 +77,8 @@ bool beginHttp(HTTPClient& http, WiFiClient& plain, WiFiClientSecure& secure,
                const String& url, String& error) {
   http.setTimeout(HTTP_TIMEOUT_MS);
   if (url.startsWith("https://")) {
-    // Update authenticity is provided by the signed manifest and firmware hash.
-    // Proper CA validation is a separate TLS-hardening milestone.
+    // The signed manifest authenticates update metadata and the signed SHA-256
+    // binds the downloaded image. CA validation is hardened separately.
     secure.setInsecure();
     if (!http.begin(secure, url)) {
       error = "https_begin_failed";
@@ -140,10 +149,12 @@ bool fetchSignatureBase64(const String& url, String& output, String& error) {
   uint8_t signature[MAX_SIGNATURE_BYTES];
   size_t offset = 0;
   WiFiClient* stream = http.getStreamPtr();
+  unsigned long lastProgress = millis();
   while (offset < static_cast<size_t>(declaredLength)) {
     const int available = stream->available();
     if (available <= 0) {
       if (!http.connected()) break;
+      if (millis() - lastProgress > HTTP_TIMEOUT_MS) break;
       delay(1);
       continue;
     }
@@ -152,6 +163,7 @@ bool fetchSignatureBase64(const String& url, String& output, String& error) {
     const int read = stream->readBytes(signature + offset, wanted);
     if (read <= 0) break;
     offset += static_cast<size_t>(read);
+    lastProgress = millis();
   }
   http.end();
 
@@ -162,37 +174,45 @@ bool fetchSignatureBase64(const String& url, String& output, String& error) {
 
   unsigned char encoded[256];
   size_t encodedLength = 0;
-  const int result = mbedtls_base64_encode(encoded, sizeof(encoded), &encodedLength,
-                                            signature, offset);
-  if (result != 0 || encodedLength == 0) {
+  const int result = mbedtls_base64_encode(encoded, sizeof(encoded) - 1,
+                                            &encodedLength, signature, offset);
+  if (result != 0 || encodedLength == 0 || encodedLength >= sizeof(encoded)) {
     error = "signature_base64_encode_failed";
     return false;
   }
-  output = String(reinterpret_cast<char*>(encoded)).substring(0, encodedLength);
+  encoded[encodedLength] = '\0';
+  output = String(reinterpret_cast<char*>(encoded));
   return true;
 }
 
 void setFailed(const String& error) {
-  portENTER_CRITICAL(&stateMux);
-  lastError = error;
-  remoteState = RemoteState::FAILED;
-  workerTask = nullptr;
-  portEXIT_CRITICAL(&stateMux);
+  StateLock lock;
+  if (lock.locked()) {
+    lastError = error;
+    remoteState = RemoteState::FAILED;
+    workerTask = nullptr;
+  }
 }
 
 void finishWorker(RemoteState state) {
-  portENTER_CRITICAL(&stateMux);
-  remoteState = state;
-  workerTask = nullptr;
-  portEXIT_CRITICAL(&stateMux);
+  StateLock lock;
+  if (lock.locked()) {
+    remoteState = state;
+    workerTask = nullptr;
+  }
 }
 
 void checkWorker(void*) {
   String localManifestUrl;
-  portENTER_CRITICAL(&stateMux);
-  remoteState = RemoteState::CHECKING;
-  localManifestUrl = manifestUrl;
-  portEXIT_CRITICAL(&stateMux);
+  {
+    StateLock lock;
+    if (!lock.locked()) {
+      vTaskDelete(nullptr);
+      return;
+    }
+    remoteState = RemoteState::CHECKING;
+    localManifestUrl = manifestUrl;
+  }
 
   if (WiFi.status() != WL_CONNECTED) {
     setFailed("wifi_not_connected");
@@ -228,21 +248,29 @@ void checkWorker(void*) {
     return;
   }
 
-  portENTER_CRITICAL(&stateMux);
-  baseUrl = localBase;
-  lastError = "";
-  remoteState = RemoteState::AVAILABLE;
-  workerTask = nullptr;
-  portEXIT_CRITICAL(&stateMux);
+  {
+    StateLock lock;
+    if (lock.locked()) {
+      baseUrl = localBase;
+      lastError = "";
+      remoteState = RemoteState::AVAILABLE;
+      workerTask = nullptr;
+    }
+  }
   vTaskDelete(nullptr);
 }
 
 void applyWorker(void*) {
   String localBase;
-  portENTER_CRITICAL(&stateMux);
-  remoteState = RemoteState::DOWNLOADING;
-  localBase = baseUrl;
-  portEXIT_CRITICAL(&stateMux);
+  {
+    StateLock lock;
+    if (!lock.locked()) {
+      vTaskDelete(nullptr);
+      return;
+    }
+    remoteState = RemoteState::DOWNLOADING;
+    localBase = baseUrl;
+  }
 
   if (WiFi.status() != WL_CONNECTED) {
     setFailed("wifi_not_connected");
@@ -268,7 +296,7 @@ void applyWorker(void*) {
     return;
   }
 
-  const auto expected = FirmwarePackageVerifier::metadata();
+  const FirmwarePackageVerifier::Metadata expected = FirmwarePackageVerifier::metadata();
   const int declaredLength = http.getSize();
   if (declaredLength <= 0 || static_cast<size_t>(declaredLength) != expected.size) {
     setFailed("firmware_content_length_mismatch");
@@ -338,17 +366,24 @@ void applyWorker(void*) {
 }
 
 bool startWorker(TaskFunction_t function, const char* name, String& error) {
+  StateLock lock;
+  if (!lock.locked()) {
+    error = "state_lock_timeout";
+    return false;
+  }
   if (workerTask != nullptr) {
     error = "worker_busy";
     return false;
   }
-  BaseType_t result = xTaskCreatePinnedToCore(function, name, 8192, nullptr, 1,
-                                              &workerTask, 0);
+
+  TaskHandle_t task = nullptr;
+  const BaseType_t result = xTaskCreatePinnedToCore(function, name, 8192, nullptr, 1,
+                                                    &task, 0);
   if (result != pdPASS) {
-    workerTask = nullptr;
     error = "worker_create_failed";
     return false;
   }
+  workerTask = task;
   return true;
 }
 
@@ -357,19 +392,29 @@ bool startWorker(TaskFunction_t function, const char* name, String& error) {
 namespace RemoteFirmwareUpdate {
 
 void begin() {
-  remoteState = RemoteState::IDLE;
-  manifestUrl = "";
-  baseUrl = "";
-  lastError = "";
-  workerTask = nullptr;
+  if (!stateMutex) stateMutex = xSemaphoreCreateMutex();
+  StateLock lock;
+  if (lock.locked()) {
+    remoteState = RemoteState::IDLE;
+    manifestUrl = "";
+    baseUrl = "";
+    lastError = "";
+    workerTask = nullptr;
+  }
 }
 
 String statusJson() {
-  portENTER_CRITICAL(&stateMux);
-  const RemoteState state = remoteState;
-  const String error = lastError;
-  const String url = manifestUrl;
-  portEXIT_CRITICAL(&stateMux);
+  RemoteState state = RemoteState::FAILED;
+  String error = "state_lock_timeout";
+  String url;
+  {
+    StateLock lock;
+    if (lock.locked()) {
+      state = remoteState;
+      error = lastError;
+      url = manifestUrl;
+    }
+  }
 
   String json = "{";
   json += "\"state\":\"" + String(stateName(state)) + "\",";
@@ -398,36 +443,46 @@ void registerRoutes(AsyncWebServer& server) {
       return;
     }
 
-    String error;
-    portENTER_CRITICAL(&stateMux);
-    const bool busy = workerTask != nullptr || remoteState == RemoteState::CHECKING ||
-                      remoteState == RemoteState::DOWNLOADING;
-    if (!busy) {
+    {
+      StateLock lock;
+      if (!lock.locked()) {
+        request->send(503, "application/json", "{\"error\":\"state_lock_timeout\"}");
+        return;
+      }
+      if (workerTask != nullptr || remoteState == RemoteState::CHECKING ||
+          remoteState == RemoteState::DOWNLOADING) {
+        request->send(409, "application/json", "{\"error\":\"remote_update_busy\"}");
+        return;
+      }
       manifestUrl = url;
       baseUrl = "";
       lastError = "";
-      remoteState = RemoteState::CHECK_QUEUED;
+      remoteState = RemoteState::IDLE;
     }
-    portEXIT_CRITICAL(&stateMux);
-    if (busy || !startWorker(checkWorker, "ota-check", error)) {
-      if (!error.length()) error = "remote_update_busy";
-      request->send(409, "application/json", "{\"error\":\"" + error + "\"}");
+
+    String error;
+    if (!startWorker(checkWorker, "ota-check", error)) {
+      setFailed(error);
+      request->send(500, "application/json", statusJson());
       return;
     }
     request->send(202, "application/json", statusJson());
   });
 
   server.on("/api/update/apply", HTTP_POST, [](AsyncWebServerRequest* request) {
-    String error;
-    portENTER_CRITICAL(&stateMux);
-    const bool available = remoteState == RemoteState::AVAILABLE && workerTask == nullptr;
-    if (available) remoteState = RemoteState::APPLY_QUEUED;
-    portEXIT_CRITICAL(&stateMux);
-
-    if (!available) {
-      request->send(409, "application/json", "{\"error\":\"remote_update_not_available\"}");
-      return;
+    {
+      StateLock lock;
+      if (!lock.locked()) {
+        request->send(503, "application/json", "{\"error\":\"state_lock_timeout\"}");
+        return;
+      }
+      if (remoteState != RemoteState::AVAILABLE || workerTask != nullptr) {
+        request->send(409, "application/json", "{\"error\":\"remote_update_not_available\"}");
+        return;
+      }
     }
+
+    String error;
     if (!startWorker(applyWorker, "ota-apply", error)) {
       setFailed(error);
       request->send(500, "application/json", statusJson());
