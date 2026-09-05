@@ -46,27 +46,85 @@ Interactive human use can use PlatformIO's monitor:
 ./scripts/pio device monitor -p /dev/ttyUSB0 -b 115200
 ```
 
-For Aurora jobs this is not the preferred path because the PlatformIO monitor expects an interactive terminal. A previous non-interactive Aurora monitor job exited with failure even though the firmware was running correctly.
+For Aurora jobs this is not the preferred path because the PlatformIO monitor expects an interactive terminal.
 
-Use pyserial for deterministic capture under Aurora. Example pattern:
+Use the repository helper for deterministic passive capture:
 
-```python
-import serial, time
-s = serial.Serial('/dev/ttyUSB0', 115200, timeout=0.5)
-end = time.time() + 8
-while time.time() < end:
-    line = s.readline().decode(errors='ignore').strip()
-    if line:
-        print(line)
-s.close()
+```bash
+.venv-platformio/bin/python scripts/capture_serial.py --seconds 10
 ```
 
-The verified smoke firmware produced normal ROM boot output followed by:
+Important: on this CP2102 board, opening pyserial with default DTR/RTS states can reset the ESP32 and interfere with double-reset detection. The helper configures DTR/RTS before opening the port.
 
-```text
-ESP32_SMOKE_BOOT_OK
-ESP32_SMOKE_HEARTBEAT_OK
+## Runtime checks
+
+Status endpoint:
+
+```bash
+curl -fsS http://proj-esp32.local/api/status
 ```
+
+Expected healthy baseline includes:
+
+```json
+{
+  "state": "ONLINE",
+  "wifi": true,
+  "mqtt": true,
+  "mqtt_configured": true,
+  "mqtt_tls": true
+}
+```
+
+Web console:
+
+`http://proj-esp32.local/webserial`
+
+MQTT configuration page:
+
+`http://proj-esp32.local/config/mqtt`
+
+Broker/Wi-Fi credentials must never be committed or printed into persistent automation logs unnecessarily.
+
+## MQTT / CloudAMQP smoke test
+
+The validated broker uses MQTT/TLS on port 8883. Keep credentials outside the repository.
+
+Subscriber:
+
+```bash
+mosquitto_sub \
+  -h jackal.rmq.cloudamqp.com \
+  -p 8883 \
+  --tls-version tlsv1.2 \
+  -u '<mqtt-username>' \
+  -P '<mqtt-password>' \
+  -t 'lab/proj-esp32/#' \
+  -v
+```
+
+Publish `ping`:
+
+```bash
+mosquitto_pub \
+  -h jackal.rmq.cloudamqp.com \
+  -p 8883 \
+  --tls-version tlsv1.2 \
+  -u '<mqtt-username>' \
+  -P '<mqtt-password>' \
+  -t 'lab/proj-esp32/10A2CCEF49C0/cmd' \
+  -m 'ping'
+```
+
+Success criteria:
+
+1. RabbitMQ dashboard shows the ESP32 MQTT connection;
+2. WebSerial prints `MQTT RX .../cmd => ping`;
+3. subscriber sees the `/cmd` message;
+4. subscriber receives a status JSON response on `/events`;
+5. telemetry continues at roughly 10-second intervals.
+
+See `mqtt.md` for the complete validated integration record.
 
 ## Aurora jobs
 
@@ -94,13 +152,9 @@ Add label:
 
 `aurora:queued`
 
-The Aurora Client updates the issue and posts a local job UUID after execution.
+The Aurora Client updates the issue and posts a local job UUID after execution. Aurora Watch is read-only.
 
-If Aurora Watch is unavailable, use the job UUID with the external read endpoint:
-
-`https://jobs.omni-one.org/api/watch/jobs/{jobId}`
-
-For important diagnostics, make the job capture stdout/stderr into a file and post that file to the issue using GitHub CLI. This avoids depending on a separate observation channel.
+For important diagnostics, make the job capture stdout/stderr into a file and post that file to the issue with GitHub CLI. Do not put broker passwords or other secrets into the issue body.
 
 ## Git workflow
 
@@ -108,7 +162,7 @@ Canonical remote:
 
 `https://github.com/kernelpanic2015/proj-esp32.git`
 
-The desired invariant is:
+Desired invariant:
 
 ```text
 local main == origin/main
@@ -128,18 +182,28 @@ git commit -m '...'
 git push origin main
 ```
 
-Do not commit `.pio/` or `.venv-platformio/`.
+Do not commit `.pio/`, `.venv-platformio/`, Wi-Fi credentials, MQTT credentials or local secret/config files.
+
+Useful synchronization check:
+
+```bash
+git fetch origin main
+git status --short --branch
+test "$(git rev-parse HEAD)" = "$(git rev-parse origin/main)"
+```
 
 ## Safe iteration order
 
-For changes that can affect boot/networking:
+For changes that can affect boot/networking/messaging:
 
-1. pull/sync source
-2. compile
-3. inspect warnings/errors
-4. upload
-5. capture serial boot
-6. validate network services
-7. only then push local-only corrections
+1. synchronize source;
+2. compile;
+3. inspect warnings/errors and flash/RAM footprint;
+4. upload;
+5. capture serial boot;
+6. validate `/api/status` and WebSerial;
+7. validate broker connection and MQTT round-trip if messaging changed;
+8. commit/push local corrections;
+9. verify `local main == origin/main`.
 
 USB remains the recovery path even after OTA is enabled.
