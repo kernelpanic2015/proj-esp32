@@ -87,4 +87,84 @@ This proves the full controlled lifecycle:
 0.1.3 build 4 / app1 / VALID / ONLINE
 ```
 
-The next OTA security milestone is on-device verification of the signed update package before an image is accepted for installation.
+## 2026-09-05 — transition to signed-update verifier 0.1.5/build 6
+
+- Source: `0.1.3`, build `4`, `app1/VALID`.
+- Target: `0.1.5`, build `6`, written to `app0` through the legacy 0.1.3 upload endpoint.
+- Candidate SHA-256: `f1df146d0d112926c04a525186c0326f0b51a5046487604e8256dce56da69997`.
+- Host ECDSA P-256 manifest verification: `Verified OK`.
+- First reachable target sample (~2 seconds): `0.1.5/build 6`, `app0/PENDING_VERIFY`.
+- Around 9 seconds: `app0/VALID`.
+- Runtime recovered `ONLINE` with Wi-Fi and MQTT/TLS connected.
+- 0.1.5 introduced on-device signed-manifest verification, firmware SHA-256 verification and removed the unsigned ArduinoOTA bypass.
+
+## 2026-09-05 — signed OTA negative tests and 0.1.6/build 7 positive proof
+
+Starting baseline: `0.1.5/build 6`, `app0/VALID`.
+
+### Unsigned upload rejection
+
+A direct multipart upload without a prepared signed package returned HTTP `400` with:
+
+`error = signed_package_not_prepared`
+
+The boot partition remained `app0`; the running image remained `VALID`.
+
+### Invalid manifest signature rejection
+
+A one-byte modified DER signature was sent with the manifest. `/api/update/prepare` returned HTTP `400` with:
+
+`error = package_prepare_manifest_signature_invalid`
+
+No package was prepared and no boot partition change occurred.
+
+### Tampered firmware rejection
+
+A valid signed 0.1.6 manifest/signature was accepted first:
+
+- candidate: `0.1.6`, build `7`
+- size: `1161696` bytes
+- expected firmware SHA-256: `e7a63a146efb543b62d64f7c02aaeb2e6f0e01b662c9b229b496999be3728aa7`
+
+A same-size firmware copy with one modified byte was then uploaded. The ESP32 streamed the image hash, rejected it with HTTP `400` and:
+
+`error = firmware_sha256_mismatch`
+
+After rejection:
+
+- running partition remained `app0`
+- boot partition remained `app0`
+- native image state remained `VALID`
+
+This proves that a signed manifest cannot authorize different firmware bytes.
+
+### Valid signed 0.1.6 installation
+
+The valid signed package was prepared again and the original firmware uploaded:
+
+```text
+0.1.5 build 6 / app0 / VALID
+        -> verify signed manifest on device
+        -> verify firmware SHA-256 on device
+        -> install to app1
+0.1.6 build 7 / app1 / PENDING_VERIFY
+        -> application health window
+0.1.6 build 7 / app1 / VALID
+```
+
+Observed first reachable 0.1.6 sample at ~2 seconds in `app1/PENDING_VERIFY`; around 9 seconds the image became `VALID`.
+
+Final runtime state:
+
+- firmware `0.1.6`, build `7`, channel `dev`
+- running/boot partition `app1`
+- next update partition `app0`
+- system `ONLINE`
+- Wi-Fi connected
+- MQTT connected over TLS
+- NVS-backed MQTT configuration still present
+- free heap about 173 KiB
+
+Aurora proof job completed with `SIGNED_OTA_0_1_6_PROOF_OK` and exit code `0`.
+
+The signed local Web OTA acceptance path is therefore physically validated. The next OTA milestone is remote signed-manifest retrieval and common Web/MQTT/automatic update triggers, while retaining the same verifier and UpdateManager.
