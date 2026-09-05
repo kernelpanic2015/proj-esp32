@@ -132,9 +132,9 @@ Candidate validation signals:
 
 On success, mark the image valid. On failure/reboot loop, return to the last known-good image when bootloader capability permits. If native rollback is unavailable in the current framework build, implement/document the compatible fallback before calling this stage complete.
 
-## Stage 5 — Remote transport, MQTT triggers and persisted policy validated; automatic scheduler pending
+## Stage 5 — Remote transport, MQTT triggers, persisted policy and automatic scheduler [validated]
 
-Remote signed check/apply, MQTT `firmware.check` / `firmware.update`, and persistent NVS update policy have been proven on the physical ESP32. Bare `firmware.check` resolves the stored HTTPS manifest URL. Only the nonblocking automatic scheduler remains pending and must reuse that same path.
+Remote signed check/apply, MQTT `firmware.check` / `firmware.update`, persistent NVS update policy, and a nonblocking automatic check scheduler have all been proven on the physical ESP32. Bare `firmware.check` resolves the stored HTTPS manifest URL, while the automatic scheduler triggers that same check path after the configured boot-relative interval. Automatic scheduling is check-only and never auto-applies firmware.
 
 MQTT may request update actions but never transports the firmware payload.
 

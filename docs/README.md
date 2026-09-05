@@ -44,7 +44,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] remote signed manifest check + firmware download/apply path validated on hardware
 - [x] MQTT `firmware.check <url>` / `firmware.update` triggers validated through the real broker
 - [x] persist remote-update policy in NVS; reboot/OTA persistence and bare `firmware.check` proven
-- [ ] add nonblocking automatic update-check scheduler
+- [x] nonblocking automatic update-check scheduler proven on hardware
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -54,13 +54,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after the persistent update-policy proof:
+Validated directly on the physical device on 2026-09-05 after the automatic update-check scheduler proof:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.12`, build `13`, channel `dev`
+- firmware: `0.1.14`, build `15`, channel `dev`
 - running OTA partition: `app1`
 - boot partition: `app1`
 - next update partition: `app0`
@@ -70,9 +70,9 @@ Validated directly on the physical device on 2026-09-05 after the persistent upd
 - MQTT: connected
 - MQTT transport: TLS
 - remote OTA policy: HTTPS-only
-- persisted update-policy revision: `1`
+- automatic update policy currently disabled; temporary lab manifest URL cleared
 
-The update policy is stored transactionally in NVS. A saved HTTPS manifest URL survived an explicit reboot and a complete A/B OTA cycle. A bare MQTT `firmware.check` resolved the saved policy URL, reached `AVAILABLE`, and `firmware.update` installed `0.1.12/build 13`. `last_result` persisted as `install_pending_reboot` while the policy revision remained unchanged.
+The persisted policy can arm a boot-relative, nonblocking automatic check scheduler. The scheduler waits the configured interval, invokes the same signed RemoteUpdate check path without MQTT or Web input, records runtime attempt counters without high-frequency NVS writes, and never auto-applies firmware. The physical proof discovered `0.1.14/build 15` automatically after reboot; operator apply then completed `PENDING_VERIFY -> VALID`.
 
 ## OTA partition layout
 

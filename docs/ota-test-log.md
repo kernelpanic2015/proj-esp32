@@ -220,3 +220,19 @@ This proves MQTT is a management trigger rather than an OTA transport: signed ma
 - Aurora proof issue #644 completed successfully.
 
 This proves NVS update-policy persistence independently across reboot and A/B OTA, and proves that `firmware.check` can use the saved policy source without transmitting a manifest URL in the MQTT command.
+
+## 2026-09-05 — automatic update-check scheduler proof
+
+- Starting image: `0.1.12/build 13`, `app1/VALID`, ONLINE with MQTT/TLS.
+- Installed signed scheduler-capable transition image `0.1.13-remote-test/build 14` to `app0`; observed `PENDING_VERIFY -> VALID`.
+- Started a temporary HTTPS release fixture on `kpnote` serving signed target `0.1.14/build 15`.
+- Persisted policy with `enabled=true`, interval 60 seconds and the HTTPS manifest URL, then rebooted the ESP32.
+- After reboot the scheduler re-armed from the persisted policy using boot-relative `millis()` timing; no manual Web call and no MQTT `firmware.check` command was sent.
+- At the due time, scheduler attempt/accepted counters advanced and RemoteUpdate reached `AVAILABLE` with candidate `0.1.14/build 15`.
+- Policy `last_result` became `available`; policy revision did not change merely because a check executed.
+- The scheduler did not auto-apply. An explicit operator `POST /api/update/apply` was then issued.
+- Target image reached `0.1.14/app1/PENDING_VERIFY -> VALID`.
+- Temporary policy was disabled afterward so the dead lab fixture would not generate future checks.
+- Final image remained ONLINE with Wi-Fi and MQTT/TLS, restored HTTPS-only remote policy, and removed the lab MQTT loopback endpoint.
+
+This closes Stage 5D: automatic checks are nonblocking, policy-driven, reboot-safe, and reuse the exact signed remote UpdateManager path without introducing an automatic apply path.

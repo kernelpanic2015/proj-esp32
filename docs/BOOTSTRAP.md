@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after the persistent signed update-policy proof:
+Current physical device state after the automatic update scheduler proof:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.12`
-- build: `13`
+- firmware: `0.1.14`
+- build: `15`
 - channel: `dev`
 - running partition: `app1`
 - boot partition: `app1`
@@ -58,9 +58,9 @@ Current physical device state after the persistent signed update-policy proof:
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 
-Signed Web OTA, remote check/apply and MQTT triggers share one UpdateManager path. The NVS update-policy document now provides the default manifest source for a bare `firmware.check`; the saved policy survived both a reboot and the OTA transition to `0.1.12/build 13`.
+Signed Web OTA, remote check/apply, MQTT triggers, persisted NVS policy and the automatic check scheduler now share the same UpdateManager path. Automatic scheduling is check-only: it never applies a firmware image without an explicit operator/control-plane apply request. Network failure can delay or fail an update check but cannot stop local control.
 
-Resolved dependency baseline is unchanged. Latest normal build remains about 16.6% RAM and 68.4% of each 1728 KiB OTA slot.
+Latest normal build remains within the 1728 KiB OTA slot with roughly 68-70% flash occupancy and about 16-17% static RAM usage.
 
 ## Flash layout — validated
 
@@ -293,13 +293,13 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. add the nonblocking automatic-check scheduler using the persisted NVS policy, with connectivity failures treated only as degraded update service state;
-2. add explicit update-policy health/last-attempt metadata without writing NVS on high-frequency runtime paths;
-3. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
-4. harden MQTT with LWT and reconnect backoff/jitter;
-5. continue modular runtime (`ComponentRegistry`, health model, Supervisor, local rules/scheduler);
-6. mount LittleFS and add minimal recovery UI;
-7. proceed to TFT/touch/microSD bring-up only after pinout confirmation.
+1. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
+2. harden MQTT with LWT plus reconnect backoff/jitter;
+3. begin Stage 6 modular runtime (`ComponentRegistry`, common health model, EventBus and Supervisor);
+4. add explicit component/update health metadata using the common model;
+5. mount LittleFS and add minimal recovery UI;
+6. implement local ConfigurationStore/RuleEngine/Scheduler without connectivity dependencies;
+7. proceed to DS3231/TFT/touch/microSD only after physical pin mapping confirmation.
 
 ## Source-of-truth invariant
 
