@@ -8,6 +8,8 @@ This directory is the canonical handoff for `proj-esp32`.
 2. [`hardware.md`](hardware.md) — confirmed MCU/board/flash/serial facts and GPIO constraints.
 3. [`architecture.md`](architecture.md) — firmware architecture, state machine and network services.
 4. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, erase and serial-observation workflow.
+5. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and the replacement/licensing caveats.
+6. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
 
 ## Current milestones
 
