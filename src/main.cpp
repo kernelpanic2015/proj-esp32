@@ -19,6 +19,7 @@
 #include "project_config.h"
 #include "firmware_metadata.h"
 #include "update_service.h"
+#include "remote_update_service.h"
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -287,6 +288,7 @@ void startNetworkServices() {
     body += "status=/api/status\n";
     body += "version=/api/version\n";
     body += "update=/update\n";
+    body += "remote_update_status=/api/update/remote/status\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
@@ -340,6 +342,7 @@ void startNetworkServices() {
 
   registerFirmwareMetadataRoutes(server);
   FirmwareUpdate::registerRoutes(server);
+  RemoteFirmwareUpdate::registerRoutes(server);
 
   WebSerial.begin(&server);
   WebSerial.onMessage(handleWebCommand);
@@ -388,6 +391,7 @@ void setup() {
   preferencesReady = preferences.begin("proj-esp32", false);
   loadMqttConfig();
   FirmwareUpdate::begin(preferencesReady);
+  RemoteFirmwareUpdate::begin();
 
   WiFi.mode(WIFI_STA);
   deviceId = buildDeviceId();

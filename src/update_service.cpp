@@ -202,6 +202,138 @@ String statusJson() {
   return json;
 }
 
+bool preparePackage(const String& manifestJson,
+                    const String& signatureBase64,
+                    String& error) {
+  error = "";
+  if (!canPreparePackage()) {
+    error = "update_busy";
+    lastError = error;
+    return false;
+  }
+
+  if (!FirmwarePackageVerifier::prepare(manifestJson, signatureBase64, error)) {
+    lastError = "package_prepare_" + error;
+    return false;
+  }
+
+  const auto& package = FirmwarePackageVerifier::metadata();
+  const esp_partition_t* nextUpdate = esp_ota_get_next_update_partition(nullptr);
+  if (!nextUpdate || package.size > nextUpdate->size) {
+    FirmwarePackageVerifier::clear();
+    error = "firmware_too_large";
+    lastError = "package_" + error;
+    return false;
+  }
+
+  lastError = "";
+  return true;
+}
+
+bool beginPreparedInstall(String& error) {
+  error = "";
+  receivedBytes = 0;
+  lastError = "";
+
+  if (!FirmwarePackageVerifier::prepared()) {
+    error = "signed_package_not_prepared";
+    failUpdate(error);
+    return false;
+  }
+
+  const auto& package = FirmwarePackageVerifier::metadata();
+  const esp_partition_t* nextUpdate = esp_ota_get_next_update_partition(nullptr);
+  if (!nextUpdate || package.size > nextUpdate->size) {
+    error = "package_firmware_too_large";
+    failUpdate(error);
+    return false;
+  }
+
+  if (!beginUploadHash()) {
+    error = "firmware_hash_begin_failed";
+    failUpdate(error);
+    return false;
+  }
+
+  setState(UpdateState::RECEIVING);
+  if (!Update.begin(package.size, U_FLASH)) {
+    error = "update_begin_failed_" + String(Update.getError());
+    failUpdate(error);
+    return false;
+  }
+  updateSessionOpen = true;
+  return true;
+}
+
+bool writePreparedChunk(uint8_t* data, size_t len, String& error) {
+  error = "";
+  if (updateState != UpdateState::RECEIVING) {
+    error = "update_not_receiving";
+    return false;
+  }
+
+  const auto& package = FirmwarePackageVerifier::metadata();
+  if (receivedBytes + len > package.size) {
+    error = "firmware_size_exceeded";
+    failUpdate(error);
+    return false;
+  }
+
+  if (len == 0) return true;
+  if (!updateUploadHash(data, len)) {
+    error = "firmware_hash_update_failed";
+    failUpdate(error);
+    return false;
+  }
+
+  const size_t written = Update.write(data, len);
+  if (written != len) {
+    error = "update_write_failed_" + String(Update.getError());
+    failUpdate(error);
+    return false;
+  }
+  receivedBytes += written;
+  return true;
+}
+
+bool finishPreparedInstall(String& error) {
+  error = "";
+  if (updateState != UpdateState::RECEIVING) {
+    error = "update_not_receiving";
+    return false;
+  }
+
+  setState(UpdateState::FINALIZING);
+  const auto& package = FirmwarePackageVerifier::metadata();
+  if (receivedBytes != package.size) {
+    error = "firmware_size_mismatch";
+    failUpdate(error);
+    return false;
+  }
+
+  uint8_t actualHash[32];
+  if (!finishUploadHash(actualHash)) {
+    error = "firmware_hash_finish_failed";
+    failUpdate(error);
+    return false;
+  }
+  if (memcmp(actualHash, package.sha256, sizeof(actualHash)) != 0) {
+    error = "firmware_sha256_mismatch";
+    failUpdate(error);
+    return false;
+  }
+
+  if (!Update.end(true)) {
+    error = "update_end_failed_" + String(Update.getError());
+    failUpdate(error);
+    return false;
+  }
+  updateSessionOpen = false;
+  lastError = "";
+  setState(UpdateState::PENDING_REBOOT);
+  return true;
+}
+
 void registerRoutes(AsyncWebServer& server) {
   server.on("/api/update/status", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", statusJson());
@@ -212,10 +344,6 @@ void registerRoutes(AsyncWebServer& server) {
   });
 
   server.on("/api/update/prepare", HTTP_POST, [](AsyncWebServerRequest* request) {
-    if (!canPreparePackage()) {
-      request->send(409, "application/json", statusJson());
-      return;
-    }
     if (!request->hasParam("manifest", true) ||
         !request->hasParam("signature", true)) {
       lastError = "package_prepare_missing_fields";
@@ -225,23 +353,12 @@ void registerRoutes(AsyncWebServer& server) {
 
     const String manifest = request->getParam("manifest", true)->value();
     const String signature = request->getParam("signature", true)->value();
-    String verificationError;
-    if (!FirmwarePackageVerifier::prepare(manifest, signature, verificationError)) {
-      lastError = "package_prepare_" + verificationError;
-      request->send(400, "application/json", statusJson());
+    String error;
+    if (!preparePackage(manifest, signature, error)) {
+      request->send(error == "update_busy" ? 409 : 400,
+                    "application/json", statusJson());
       return;
     }
-
-    const auto& package = FirmwarePackageVerifier::metadata();
-    const esp_partition_t* nextUpdate = esp_ota_get_next_update_partition(nullptr);
-    if (!nextUpdate || package.size > nextUpdate->size) {
-      FirmwarePackageVerifier::clear();
-      lastError = "package_firmware_too_large";
-      request->send(400, "application/json", statusJson());
-      return;
-    }
-
-    lastError = "";
     request->send(200, "application/json", statusJson());
   });
 
@@ -255,84 +372,19 @@ void registerRoutes(AsyncWebServer& server) {
          uint8_t* data, size_t len, bool final) {
         (void)request;
         (void)filename;
+        String error;
 
-        if (index == 0) {
-          receivedBytes = 0;
-          lastError = "";
-
-          if (!FirmwarePackageVerifier::prepared()) {
-            failUpdate("signed_package_not_prepared");
-            return;
-          }
-
-          const auto& package = FirmwarePackageVerifier::metadata();
-          const esp_partition_t* nextUpdate = esp_ota_get_next_update_partition(nullptr);
-          if (!nextUpdate || package.size > nextUpdate->size) {
-            failUpdate("package_firmware_too_large");
-            return;
-          }
-
-          if (!beginUploadHash()) {
-            failUpdate("firmware_hash_begin_failed");
-            return;
-          }
-
-          setState(UpdateState::RECEIVING);
-          if (!Update.begin(package.size, U_FLASH)) {
-            failUpdate("update_begin_failed_" + String(Update.getError()));
-            return;
-          }
-          updateSessionOpen = true;
+        if (index == 0 && !beginPreparedInstall(error)) {
+          return;
         }
-
         if (updateState != UpdateState::RECEIVING) {
           return;
         }
-
-        const auto& package = FirmwarePackageVerifier::metadata();
-        if (receivedBytes + len > package.size) {
-          failUpdate("firmware_size_exceeded");
+        if (len > 0 && !writePreparedChunk(data, len, error)) {
           return;
         }
-
-        if (len > 0) {
-          if (!updateUploadHash(data, len)) {
-            failUpdate("firmware_hash_update_failed");
-            return;
-          }
-
-          const size_t written = Update.write(data, len);
-          if (written != len) {
-            failUpdate("update_write_failed_" + String(Update.getError()));
-            return;
-          }
-          receivedBytes += written;
-        }
-
         if (final) {
-          setState(UpdateState::FINALIZING);
-
-          if (receivedBytes != package.size) {
-            failUpdate("firmware_size_mismatch");
-            return;
-          }
-
-          uint8_t actualHash[32];
-          if (!finishUploadHash(actualHash)) {
-            failUpdate("firmware_hash_finish_failed");
-            return;
-          }
-          if (memcmp(actualHash, package.sha256, sizeof(actualHash)) != 0) {
-            failUpdate("firmware_sha256_mismatch");
-            return;
-          }
-
-          if (!Update.end(true)) {
-            failUpdate("update_end_failed_" + String(Update.getError()));
-            return;
-          }
-          updateSessionOpen = false;
-          setState(UpdateState::PENDING_REBOOT);
+          finishPreparedInstall(error);
         }
       });
 }
