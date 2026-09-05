@@ -18,35 +18,84 @@ Use this file to resume the project in a new ChatGPT conversation without recons
 
 Retail board identification: NodeMCU-32S, 38 pins, ESP-WROOM-32 module, CP2102 USB/UART bridge.
 
-Direct `esptool` probe on the connected board confirmed:
+Direct `esptool` probe confirmed:
 
 - chip: ESP32-D0WD-V3
 - silicon revision: v3.0
-- features: Wi-Fi + Bluetooth, dual core, 240 MHz
+- Wi-Fi + Bluetooth, dual core, 240 MHz
 - crystal: 40 MHz
 - flash: 4 MB
 - flash voltage: 3.3 V
 
-Linux USB/udev confirmed CP2102 (`10c4:ea60`) using the `cp210x` driver and exposing `/dev/ttyUSB0`.
+Linux USB/udev confirmed CP2102 (`10c4:ea60`) using `cp210x` and exposing `/dev/ttyUSB0`.
 
 ## Validated execution chain
 
-The following path has already been tested end-to-end:
+The complete path is working:
 
 `ChatGPT -> GitHub issue -> Aurora Client -> kpnote -> PlatformIO -> /dev/ttyUSB0 -> ESP32 -> serial output`
 
-A smoke firmware was compiled, uploaded and observed emitting:
+The ESP32 flash was intentionally erased before the project firmware was built. No legacy firmware needs to be preserved.
 
-- `ESP32_SMOKE_BOOT_OK`
-- `ESP32_SMOKE_HEARTBEAT_OK`
+## Current firmware state — validated 2026-09-05
 
-Before that smoke test the ESP32 flash was intentionally erased completely. There is no old firmware that needs to be preserved.
+The actual base firmware has been compiled and flashed successfully for `nodemcu-32s`.
+
+Installed dependency set as resolved by PlatformIO:
+
+- arduino-fsm 2.2.0
+- ESP_DoubleResetDetector 1.3.2
+- WiFiManager 2.0.17
+- MQTT / arduino-mqtt 2.5.3
+- AsyncTCP 3.5.0
+- ESPAsyncWebServer 3.12.0
+- WebSerial 2.1.2
+- ArduinoOTA 2.0.0
+- ESPmDNS 2.0.0
+
+Last measured build footprint:
+
+- RAM: about 53.5 KB / 327.7 KB (16.3%)
+- application flash partition: about 1.01 MB / 1.31 MB (77.1%)
+
+The default OTA-capable partition layout is still usable, but flash growth must be watched when TFT/UI libraries are added.
+
+## Recovery and provisioning — validated
+
+`ESP_DoubleResetDetector` is active and has been tested using controlled hardware reset pulses:
+
+1. first reset -> normal path -> `FSM -> WIFI_CONNECTING`;
+2. second reset inside the detection window -> `DOUBLE_RESET_DETECTED`;
+3. double reset -> `FSM -> CONFIG_PORTAL`.
+
+The first implementation exposed an EEPROM/NVS initialization error because the DRD object was constructed globally. This was fixed by constructing it inside `setup()` after the Arduino/ESP32 runtime initializes NVS. Current serial validation shows no NVS initialization error.
+
+WiFiManager now runs its config portal in **nonblocking mode**, so `drd->loop()` and the FSM continue running while provisioning is open.
+
+The ESP currently has no saved Wi-Fi credentials because flash was erased. It therefore starts the provisioning AP:
+
+- SSID: `proj-esp32-setup`
+- AP IP: `192.168.4.1`
+
+The AP was confirmed both in ESP32 serial output and from the notebook's Wi-Fi scan at strong signal.
+
+The last controlled test ended with the ESP in `CONFIG_PORTAL`, so it should currently be advertising `proj-esp32-setup` unless it was reset/powered off afterward.
+
+## Serial observation rule
+
+Do not open pyserial with default DTR/RTS states on this CP2102 board when the goal is passive monitoring: doing so can generate an unintended ESP32 reset and can accidentally look like a double reset.
+
+Use the repository utility:
+
+```bash
+.venv-platformio/bin/python scripts/capture_serial.py --seconds 10
+```
+
+It configures DTR/RTS before opening the port so passive capture does not reset the ESP32.
 
 ## Aurora control plane
 
 Aurora jobs are submitted as strict JSON in issues in `kernelpanic2015/aurora-kpnote`, then labeled `aurora:queued`.
-
-Canonical shape:
 
 ```json
 {
@@ -58,21 +107,21 @@ Canonical shape:
 }
 ```
 
-Aurora Watch is read-only and may be unavailable. The Aurora Client writes the resulting local job UUID into the GitHub issue comment. The external Watch API can be consulted as:
+Aurora Watch is read-only and may be unavailable. Aurora writes the local job UUID into the GitHub issue comment after execution. The external read endpoint is:
 
 `https://jobs.omni-one.org/api/watch/jobs/{jobId}`
 
-When detailed stdout is needed even if Watch is unavailable, have the Aurora command post an output file back to its GitHub issue with `gh issue comment ... --body-file ...`.
+For important diagnostics, have the Aurora job post its own captured stdout/stderr back into the issue using `gh issue comment ... --body-file ...`.
 
 ## PlatformIO environment
 
-The project keeps a dedicated PlatformIO virtual environment at `.venv-platformio/` and a stable wrapper:
+A dedicated PlatformIO environment lives at `.venv-platformio/`, with wrapper:
 
 ```bash
 ./scripts/pio
 ```
 
-Typical commands:
+Common commands:
 
 ```bash
 ./scripts/pio run
@@ -81,57 +130,49 @@ Typical commands:
 ./scripts/pio device list
 ```
 
-For Aurora/non-interactive serial observation, use pyserial or direct serial reads. `pio device monitor` expects an interactive terminal and has failed under non-interactive Aurora jobs.
+## Active firmware architecture
 
-## Firmware architecture being implemented
+High-level FSM:
 
-Dependencies selected for the base firmware:
+`BOOT -> CONFIG_PORTAL | WIFI_CONNECTING -> ONLINE | OFFLINE`
 
-- `jonblack/arduino-fsm` — high-level device state machine
-- `khoih-prog/ESP_DoubleResetDetector` — double-reset recovery trigger
-- `tzapu/WiFiManager` — captive provisioning portal
-- `ESP32Async/AsyncTCP`
-- `ESP32Async/ESPAsyncWebServer` — asynchronous HTTP/WebSocket base
-- `ayushsharma82/WebSerial` — browser console at `/webserial`
-- `256dpi/arduino-mqtt` — MQTT client
-- built-in mDNS and ArduinoOTA support
+Current services coded into the firmware:
+
+- WiFiManager provisioning portal
+- mDNS target hostname `proj-esp32.local`
+- async HTTP server
+- `/` landing endpoint
+- `/api/status` JSON endpoint
+- `/webserial` browser console
+- ArduinoOTA
+- MQTT client
 
 Initial service identity:
 
 - hostname: `proj-esp32`
 - config AP: `proj-esp32-setup`
-- initial MQTT target: `kpnote.local:1883`
+- initial MQTT broker target: `kpnote.local:1883`
 - MQTT root: `lab/proj-esp32`
 
-The MQTT endpoint is intentionally just an initial default. It can later move into persisted provisioning/configuration.
+The MQTT broker target is only the first integration default and should later become provisioned/persisted configuration.
 
-## State-machine direction
+## What is implemented but not yet end-to-end validated
 
-High-level intended states:
+Because no Wi-Fi credentials are currently stored, the firmware has not yet reached STA `ONLINE` state in this build. Therefore these are compiled and flashed but still need network validation:
 
-`BOOT -> CONFIG_PORTAL | WIFI_CONNECTING -> ONLINE | OFFLINE`
+- `http://proj-esp32.local/`
+- `/api/status`
+- `/webserial`
+- MQTT connect/publish/subscribe to `kpnote.local:1883`
+- OTA over Wi-Fi
 
-Expected recovery path:
-
-`double reset -> CONFIG_PORTAL`
-
-Network/MQTT/Web/TFT callbacks should eventually produce events; the FSM should be the single owner of high-level device state.
-
-## Hardware integration still pending
-
-The user has a color TFT + resistive touch setup from older ESP32 work. Historical libraries likely included:
-
-- `TFT_eSPI`
-- `XPT2046_Touchscreen`
-- possibly an ILI9488 / ILI9486 / ILI9341 display controller
-
-Do not assume the display controller or TFT CS/DC/RST/touch pins until the actual module pinout is confirmed.
+The next human action is to provision the ESP through `proj-esp32-setup` (preferably from a phone or another device so the `kpnote` network path to Aurora is not interrupted).
 
 ## GPIO rules already adopted
 
 - logic is 3.3 V; GPIOs are not 5 V tolerant
 - GPIO34, 35, 36, 39 are input-only
-- GPIO6..11 are normally reserved for module flash and must not be used
+- GPIO6..11 are reserved for module flash
 - GPIO0, 2, 5, 12, 15 are boot strapping pins; use with care
 - GPIO1/3 are UART0/CP2102 and should remain free while USB serial/debug is required
 - default I2C: GPIO21 SDA, GPIO22 SCL
@@ -139,16 +180,21 @@ Do not assume the display controller or TFT CS/DC/RST/touch pins until the actua
 
 See `include/board_pins.h` and `docs/hardware.md`.
 
-## Immediate next validation
+## TFT/touch phase still pending
 
-After pulling the latest `main` onto `kpnote`:
+The user has an older color TFT module with resistive touch and microSD. Historical clues point to:
 
-1. build all selected dependencies together;
-2. fix any Arduino-core/library compatibility issues;
-3. upload the base firmware;
-4. validate double-reset recovery/config portal;
-5. provision Wi-Fi;
-6. validate `/`, `/api/status`, `/webserial`;
-7. validate MQTT publish/subscribe with the broker reachable from `kpnote`;
-8. validate OTA;
-9. then begin TFT/touch bring-up.
+- `TFT_eSPI`
+- `XPT2046_Touchscreen`
+- likely ILI9488 / ILI9486 / ILI9341 display controller family
+
+Do not assume the display controller or TFT CS/DC/RST/touch pins until the module is identified.
+
+## Immediate next steps
+
+1. provision Wi-Fi through `proj-esp32-setup`;
+2. capture the assigned STA IP and confirm `ONLINE` state;
+3. validate `/`, `/api/status`, and `/webserial`;
+4. confirm Mosquitto/broker reachability on `kpnote` and validate MQTT publish/subscribe;
+5. validate OTA;
+6. then begin TFT + XPT2046 bring-up.
