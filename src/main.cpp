@@ -19,6 +19,7 @@
 #include "board_pins.h"
 #include "project_config.h"
 #include "firmware_metadata.h"
+#include "update_service.h"
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -334,6 +335,7 @@ void startNetworkServices() {
   });
 
   registerFirmwareMetadataRoutes(server);
+  FirmwareUpdate::registerRoutes(server);
 
   WebSerial.begin(&server);
   WebSerial.onMessage(handleWebCommand);
@@ -389,6 +391,7 @@ void setup() {
 
   preferencesReady = preferences.begin("proj-esp32", false);
   loadMqttConfig();
+  FirmwareUpdate::begin(preferencesReady);
 
   WiFi.mode(WIFI_STA);
   deviceId = buildDeviceId();
@@ -446,6 +449,7 @@ void loop() {
 
   wifiManager.process();
   machine.run_machine();
+  FirmwareUpdate::tick(preferencesReady);
 
   const bool portalActive = wifiManager.getConfigPortalActive();
 
