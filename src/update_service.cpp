@@ -1,4 +1,5 @@
 #include "update_service.h"
+#include "restart_service.h"
 #include "firmware_package_verifier.h"
 #include "ota_state_names.h"
 
@@ -392,7 +393,7 @@ void registerRoutes(AsyncWebServer& server) {
 void tick(bool criticalStorageReady) {
   if (updateState == UpdateState::PENDING_REBOOT &&
       millis() - stateSinceMs >= REBOOT_DELAY_MS) {
-    ESP.restart();
+    RestartService::restartNow();
     return;
   }
 

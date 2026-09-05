@@ -24,6 +24,7 @@
 #include "update_policy.h"
 #include "update_scheduler.h"
 #include "configuration_store.h"
+#include "restart_service.h"
 #include "core/component_registry.h"
 #include "core/event_bus.h"
 #include "core/runtime_events.h"
@@ -389,7 +390,7 @@ void mqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   if (payloadString == "reboot") {
     mqttClient.publish(topicEvents.c_str(), "{\"event\":\"reboot_requested\"}");
     delay(100);
-    ESP.restart();
+    RestartService::restartNow();
   }
 }
 
@@ -637,7 +638,7 @@ void handleWebCommand(uint8_t* data, size_t len) {
   } else if (command == "reboot") {
     WebSerial.println("REBOOTING");
     delay(100);
-    ESP.restart();
+    RestartService::restartNow();
   } else if (command.length()) {
     WebSerial.println("Commands: status | mqtt | reboot");
   }
@@ -883,6 +884,9 @@ void setup() {
   // A global constructor caused EEPROM/NVS initialization errors on this board.
   drd = new DoubleResetDetector(ProjectConfig::DOUBLE_RESET_TIMEOUT_SECONDS,
                                 ProjectConfig::DOUBLE_RESET_STORAGE_ADDRESS);
+  RestartService::setBeforeRestartHook([]() {
+    if (drd) drd->stop();
+  });
 
   wifiManager.setConfigPortalBlocking(false);
   wifiManager.setConfigPortalTimeout(ProjectConfig::CONFIG_PORTAL_TIMEOUT_SECONDS);
@@ -921,7 +925,7 @@ void setup() {
 
 void loop() {
   if (restartRequested && millis() - restartRequestedAt > 750) {
-    ESP.restart();
+    RestartService::restartNow();
   }
 
   if (drd) {
