@@ -815,7 +815,7 @@ void startNetworkServices() {
     mqttClient.setClient(plainNetworkClient);
   }
   mqttClient.setServer(mqttHost.c_str(), mqttPort);
-  mqttClient.setBufferSize(2048);
+  mqttClient.setBufferSize(ProjectConfig::MQTT_BUFFER_SIZE);
   mqttClient.setKeepAlive(30);
   mqttClient.setCallback(mqttMessageReceived);
 

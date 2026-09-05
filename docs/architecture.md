@@ -319,3 +319,8 @@ The controlled proof showed `ONLINE/OK -> WIFI_ONLY/DEGRADED -> ONLINE/OK` for c
 ### Stage 6E Wi-Fi scheduling migration
 
 Wi-Fi reconnect timing is the next incremental migration to the common cooperative runtime. A lightweight coordinator observes Wi-Fi/config-portal eligibility; the actual reconnect task remains disabled while there is no meaningful work. On connection loss, the coordinator drives the existing application FSM to `OFFLINE` and enables the reconnect task; on recovery it drives `EVT_WIFI_UP` and disables reconnect work again. This removes another hand-written `millis()` retry timer without changing local-autonomy semantics.
+
+
+#### MQTT telemetry payload budget
+
+The common `/api/status` document is also used as the current MQTT telemetry payload. Stage 6E added Wi-Fi runtime observability and made the document 2199 bytes, exceeding the previous 2048-byte PubSubClient buffer. The buffer is now an explicit 4096-byte project setting. This preserves the current shared-status contract with headroom, while a future telemetry-schema stage may intentionally separate compact periodic telemetry from the full diagnostic status document as the component registry grows.

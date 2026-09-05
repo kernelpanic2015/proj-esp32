@@ -110,3 +110,12 @@ Implementation checkpoint:
 - preserve existing application FSM semantics (`ONLINE <-> OFFLINE`) rather than inventing a second state owner;
 - expose `/api/wifi/runtime` counters and task enable state;
 - physical proof pending: signed lab image, controlled Wi-Fi disconnect, observed reconnect attempt/success, connectivity/Supervisor recovery, clean target image.
+
+
+### Stage 6E first physical attempt — partial / payload budget corrected
+
+- Signed `0.1.23-remote-test/build 24` installed and reached `PENDING_VERIFY -> VALID`.
+- Controlled Wi-Fi disconnect was physically observed: HTTP became unavailable, Wi-Fi reconnect work stayed suppressed for the test window, then TaskScheduler issued one reconnect attempt and recorded one success.
+- After recovery, `connectivity` returned to `ONLINE/OK`, Supervisor returned to `RUNNING/OK`, MQTT reconnected, and the Wi-Fi reconnect work task returned to disabled.
+- The proof then exposed a separate telemetry budget regression: `/api/status` had grown to 2199 bytes while PubSubClient remained configured with a 2048-byte buffer, so scheduled telemetry attempts correctly ran but `publish()` returned false.
+- The buffer is therefore promoted to an explicit 4096-byte project setting before repeating the telemetry and clean-target proof. This is a transport payload-budget correction, not a Wi-Fi scheduler failure.

@@ -16,6 +16,7 @@ constexpr char MQTT_TOPIC_ROOT[] = "lab/proj-esp32";
 constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 5000;
 constexpr uint32_t MQTT_RECONNECT_INTERVAL_MS = 5000;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 10000;
+constexpr uint16_t MQTT_BUFFER_SIZE = 4096;
 
 constexpr uint8_t DOUBLE_RESET_TIMEOUT_SECONDS = 10;
 constexpr uint32_t DOUBLE_RESET_STORAGE_ADDRESS = 0;
