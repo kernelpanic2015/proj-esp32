@@ -159,10 +159,12 @@ Introduce:
 - [x] common `ComponentHealth` model;
 - [x] bounded internal event bus foundation;
 - [x] physically prove first TaskScheduler migration using the automatic OTA check path;
-- [ ] wire initial real components into the registry;
+- [x] wire the first real component (`connectivity`) into the registry;
+- [x] standardized component fault metadata (`ComponentHealth`);
+- [x] generic registry serialization exposed at `/api/components` and embedded in `/api/status`/MQTT telemetry;
+- [x] route component state/health transitions through the bounded `EventBus`;
 - [ ] `Supervisor` FSM;
-- standardized fault metadata;
-- generic serialization for API/MQTT/UI.
+- [ ] migrate additional periodic/retry work to TaskScheduler where it improves consistency (MQTT reconnect, telemetry, future sensors/actuators).
 
 Rule: drivers know hardware; components know behavior; services know communication; supervisor knows only state/health.
 

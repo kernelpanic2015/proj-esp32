@@ -40,16 +40,16 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after the Stage 6A TaskScheduler migration proof:
+Current physical device state after the Stage 6B ComponentRegistry physical proof:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.16`
-- build: `17`
+- firmware: `0.1.17`
+- build: `18`
 - channel: `dev`
-- running partition: `app1`
-- boot partition: `app1`
-- next update partition: `app0`
+- running partition: `app0`
+- boot partition: `app0`
+- next update partition: `app1`
 - native OTA image state: `VALID`
 - system/FSM: `ONLINE`
 - Wi-Fi: connected
@@ -60,9 +60,9 @@ Current physical device state after the Stage 6A TaskScheduler migration proof:
 
 `arkhipenko/TaskScheduler` 4.0.8 is now adopted alongside `jonblack/arduino-fsm`. TaskScheduler owns **when work is eligible**; FSM owns **state and behavior**. Tasks are expected to remain disabled until work is meaningful, and delayed enable/restart is the preferred mechanism for warm-up, settling, retry/backoff and minimum on/off timing.
 
-The first migrated production path is the automatic firmware check. Physical proof showed persisted policy -> delayed TaskScheduler activation -> automatic signed remote check after reboot, with no manual/MQTT check command and no automatic apply. Final `0.1.16/build 17` remained ONLINE and `VALID`.
+The first migrated production path is the automatic firmware check. Physical proof showed persisted policy -> delayed TaskScheduler activation -> automatic signed remote check after reboot, with no manual/MQTT check command and no automatic apply. Final `0.1.17/build 18` remained ONLINE and `VALID`.
 
-Stage 6 foundations under `include/core` / `src/core` now include `Component`, `ComponentHealth`, `ComponentRegistry`, and a bounded `EventBus`; they compile but real services/components are not yet registered.
+Stage 6B physically validates the first real registered component, `connectivity`: TaskScheduler owns its sampling cadence, the component owns state/health, transitions use EventBus, and `/api/components` plus `/api/status` expose the common model.
 
 Latest normal build remains within the 1728 KiB OTA slot at about 68.8% flash and 16.6% static RAM.
 
@@ -299,13 +299,12 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. wire the first real service components into `ComponentRegistry` and expose their common health metadata;
-2. add the Stage 6 `Supervisor` FSM and schedule it cooperatively with TaskScheduler;
-3. schedule bounded `EventBus.process()` and begin routing state-change events through it;
-4. gradually migrate eligible periodic/retry work (MQTT reconnect/telemetry and later sensors) from hand-written timing to TaskScheduler + FSM;
-5. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
-6. harden MQTT with LWT plus reconnect backoff/jitter;
-7. continue toward ConfigurationStore/RuleEngine/local Scheduler and later DS3231/TFT/touch/microSD.
+1. add the Stage 6 `Supervisor` FSM over the validated `ComponentRegistry` / `ComponentHealth` / `EventBus` foundation;
+2. migrate MQTT reconnect/telemetry timing to TaskScheduler incrementally without changing network behavior;
+3. add more real components only when ownership boundaries are clear;
+4. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
+5. harden MQTT with LWT plus reconnect backoff/jitter;
+6. continue toward ConfigurationStore/RuleEngine/local Scheduler and later DS3231/TFT/touch/microSD.
 
 ## Source-of-truth invariant
 

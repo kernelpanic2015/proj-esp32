@@ -167,13 +167,13 @@ The user's older `kernelpanic2015/MQTT-LIB` is useful as a design reference beca
 
 ## OTA
 
-ArduinoOTA is the first OTA mechanism. USB/CP2102 remains the recovery path.
+OTA uses the project's signed A/B UpdateManager path. Unsigned ArduinoOTA was removed so there is a single firmware trust path: signed manifest verification, firmware SHA-256 verification, inactive-slot write, `PENDING_VERIFY`, application validation and bootloader rollback. USB/CP2102 remains the recovery path.
 
 Normal development progression:
 
 ```text
 first/recovery flash -> USB
-normal iteration     -> OTA (after validation)
+normal iteration     -> signed Web/remote OTA
 runtime observation  -> WebSerial + MQTT + serial fallback
 ```
 
@@ -230,3 +230,27 @@ belongs to TaskScheduler.
 ### First physical TaskScheduler migration proof
 
 The automatic firmware-check scheduler was migrated from hand-written `millis()` polling to TaskScheduler. A controlled `0.1.15-remote-test/build 16` image persisted an enabled 60 s policy, rebooted, re-armed the delayed task, and reached remote `AVAILABLE` at about 60.5 s without any manual or MQTT `firmware.check`. `attempt_count=1` and `accepted_count=1` were observed. Only an explicit operator apply installed `0.1.16/build 17`, which completed `PENDING_VERIFY -> VALID`. This validates the intended rule that scheduled work may stay disabled until meaningful and that automatic scheduling does not imply automatic actuation/install.
+
+
+## Component registry integration (Stage 6B)
+
+The first concrete component is `connectivity`. It does not own network transport implementation yet; it owns the connectivity state/health interpretation that the rest of the platform can consume consistently.
+
+TaskScheduler samples the component every 2 s. The component itself decides its state and health:
+
+```text
+STARTING -> ONLINE      health=OK
+         -> WIFI_ONLY   health=DEGRADED, mqtt_not_configured|mqtt_disconnected
+         -> OFFLINE     health=DEGRADED, wifi_disconnected
+```
+
+Network loss is deliberately `DEGRADED`, not a platform-wide `FAULT`, because configured local control must continue without connectivity.
+
+State/health transitions are posted to the bounded `EventBus`; the current handler only logs them. This creates the event boundary needed for the future Supervisor without letting asynchronous callbacks directly mutate unrelated FSMs.
+
+`GET /api/components` now exposes the registry plus EventBus counters. The same registry JSON is embedded in `/api/status`, therefore it is also present in existing MQTT status/telemetry payloads. This is the first end-to-end use of the shared health model by API and messaging surfaces. As this enlarges the shared telemetry document, the PubSubClient packet buffer was raised to 2048 bytes to preserve headroom as more components are added.
+
+
+### Stage 6B physical proof
+
+A signed `0.1.17/build 18` image was installed on the physical ESP32 and completed `PENDING_VERIFY -> VALID` on `app0`. After network settlement, `/api/components` exposed `connectivity` as `ONLINE` / `OK`, `/api/status` embedded the same registry, MQTT/TLS was connected, and EventBus reported zero dropped events. The PubSubClient packet buffer is 2048 bytes to retain telemetry headroom as the common component model grows. This establishes the first real end-to-end component using TaskScheduler cadence + component-owned state/health + EventBus transitions + shared API/MQTT serialization.

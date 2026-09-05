@@ -12,8 +12,9 @@ This directory is the canonical handoff for `proj-esp32`.
 6. [`architecture.md`](architecture.md) — firmware architecture, state machine and network services.
 7. [`mqtt.md`](mqtt.md) — validated RabbitMQ/CloudAMQP MQTT/TLS setup, topics and smoke-test procedure.
 8. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, serial observation and Git synchronization workflow.
-9. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
-10. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
+9. [`runtime-test-log.md`](runtime-test-log.md) — physical validation evidence for the TaskScheduler + FSM modular runtime migration.
+10. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
+11. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
 
 ## Current milestones
 
@@ -46,8 +47,9 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] persist remote-update policy in NVS; reboot/OTA persistence and bare `firmware.check` proven
 - [x] nonblocking automatic update-check scheduler proven on hardware
 - [x] TaskScheduler + arduino-fsm cooperative runtime foundation; automatic scheduler migration proven on hardware
-- [x] Component / ComponentHealth / ComponentRegistry / bounded EventBus foundations compile
-- [ ] wire real components into ComponentRegistry and add Supervisor FSM
+- [x] first real ComponentRegistry entry (`connectivity`) + `/api/components` shared health API implemented
+- [x] standardized ComponentHealth metadata + bounded EventBus transition routing
+- [ ] add Supervisor FSM over the common component health model
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -57,16 +59,16 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after the Stage 6A TaskScheduler migration proof:
+Validated directly on the physical device on 2026-09-05 after the Stage 6B ComponentRegistry physical proof:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.16`, build `17`, channel `dev`
-- running OTA partition: `app1`
-- boot partition: `app1`
-- next update partition: `app0`
+- firmware: `0.1.17`, build `18`, channel `dev`
+- running OTA partition: `app0`
+- boot partition: `app0`
+- next update partition: `app1`
 - native image state: `VALID`
 - FSM/system: `ONLINE`
 - Wi-Fi: connected
@@ -77,7 +79,7 @@ Validated directly on the physical device on 2026-09-05 after the Stage 6A TaskS
 
 Stage 6A introduced `TaskScheduler` 4.0.8 alongside `arduino-fsm`. The automatic firmware-check path is the first real migration: a low-rate policy watcher remains scheduled, while the actual check task stays disabled until persisted policy enables it and then starts with a delayed first run. A reboot with a 60 s policy re-armed the task; without Web/MQTT `firmware.check`, the task fired at about 60.5 s, reached `AVAILABLE`, and operator apply completed `0.1.16/build 17` through `PENDING_VERIFY -> VALID`. The scheduler never auto-applied firmware.
 
-Stage 6 core foundations now compile: `Component`, `ComponentHealth`, `ComponentRegistry`, and a bounded `EventBus`. Real components and the Supervisor FSM are the next incremental step.
+Stage 6B now has one physically validated real component: `connectivity`. TaskScheduler samples it, transitions flow through the bounded EventBus, and the common registry is exposed by `/api/components`, `/api/status`, and existing MQTT telemetry. The Supervisor FSM is the next incremental step.
 
 ## OTA partition layout
 

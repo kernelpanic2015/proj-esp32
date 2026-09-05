@@ -23,6 +23,10 @@
 #include "remote_update_service.h"
 #include "update_policy.h"
 #include "update_scheduler.h"
+#include "core/component_registry.h"
+#include "core/event_bus.h"
+#include "core/runtime_events.h"
+#include "components/connectivity_component.h"
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -49,6 +53,19 @@ WiFiManager wifiManager;
 Preferences preferences;
 DoubleResetDetector* drd = nullptr;
 Scheduler cooperativeScheduler;
+RuntimeCore::EventBus runtimeEvents;
+RuntimeCore::ComponentRegistry runtimeComponents;
+
+bool mqttConfigured();
+bool runtimeWifiConnected();
+bool runtimeMqttConnected();
+bool runtimeMqttConfigured();
+void sampleConnectivityComponent();
+
+Components::ConnectivityComponent connectivityComponent(
+    runtimeEvents, runtimeWifiConnected, runtimeMqttConnected, runtimeMqttConfigured);
+Task connectivityHealthTask(2000, TASK_FOREVER, sampleConnectivityComponent,
+                            &cooperativeScheduler, false);
 
 bool webStarted = false;
 bool networkServicesStarted = false;
@@ -85,6 +102,16 @@ void logLine(const String& message) {
   Serial.println(message);
   if (webStarted) {
     WebSerial.println(message);
+  }
+}
+
+void handleRuntimeEvent(const RuntimeCore::Event& event) {
+  if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::ComponentStateChanged)) {
+    logLine("EVENT component_state source=" + String(event.source) +
+            " value=" + String(event.value));
+  } else if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::ComponentHealthChanged)) {
+    logLine("EVENT component_health source=" + String(event.source) +
+            " value=" + String(event.value));
   }
 }
 
@@ -160,6 +187,53 @@ bool mqttConfigured() {
          mqttUsername.length() > 0 && mqttPassword.length() > 0;
 }
 
+bool runtimeWifiConnected() {
+  return WiFi.status() == WL_CONNECTED;
+}
+
+bool runtimeMqttConnected() {
+  return mqttClient.connected();
+}
+
+bool runtimeMqttConfigured() {
+  return mqttConfigured();
+}
+
+void sampleConnectivityComponent() {
+  connectivityComponent.sample();
+}
+
+String componentsStatusJson() {
+  String json;
+  json.reserve(256);
+  json += '{';
+  json += char(34);
+  json += "registry";
+  json += char(34);
+  json += ':';
+  json += runtimeComponents.statusJson();
+  json += ',';
+  json += char(34);
+  json += "event_bus";
+  json += char(34);
+  json += ':';
+  json += '{';
+  json += char(34);
+  json += "pending";
+  json += char(34);
+  json += ':';
+  json += String(runtimeEvents.pending());
+  json += ',';
+  json += char(34);
+  json += "dropped";
+  json += char(34);
+  json += ':';
+  json += String(runtimeEvents.dropped());
+  json += '}';
+  json += '}';
+  return json;
+}
+
 String statusJson() {
   String json = "{";
   json += "\"device\":\"" + deviceId + "\",";
@@ -169,6 +243,8 @@ String statusJson() {
   json += "\"remote_update\":" + RemoteFirmwareUpdate::statusJson() + ",";
   json += "\"update_policy\":" + FirmwareUpdatePolicy::statusJson() + ",";
   json += "\"update_scheduler\":" + FirmwareUpdateScheduler::statusJson() + ",";
+  json += "\"components\":" + runtimeComponents.statusJson() + ",";
+  json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
   json += "\"state\":\"" + String(stateName(appState)) + "\",";
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
@@ -350,6 +426,7 @@ void startNetworkServices() {
     body += "remote_update_status=/api/update/remote/status\n";
     body += "update_policy=/api/update/policy\n";
     body += "update_scheduler=/api/update/scheduler\n";
+    body += "components=/api/components\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
@@ -357,6 +434,10 @@ void startNetworkServices() {
 
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", statusJson());
+  });
+
+  server.on("/api/components", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", componentsStatusJson());
   });
 
   server.on("/config/mqtt", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -443,7 +524,7 @@ void startNetworkServices() {
     mqttClient.setClient(plainNetworkClient);
   }
   mqttClient.setServer(mqttHost.c_str(), mqttPort);
-  mqttClient.setBufferSize(1024);
+  mqttClient.setBufferSize(2048);
   mqttClient.setKeepAlive(30);
   mqttClient.setCallback(mqttMessageReceived);
 
@@ -475,6 +556,14 @@ void setup() {
 
   preferencesReady = preferences.begin("proj-esp32", false);
   loadMqttConfig();
+
+  runtimeEvents.subscribe(handleRuntimeEvent);
+  runtimeComponents.add(connectivityComponent);
+  if (!runtimeComponents.beginAll()) {
+    Serial.println("RUNTIME_COMPONENT_INIT_DEGRADED");
+  }
+  connectivityHealthTask.enableDelayed(2000);
+
   FirmwareUpdate::begin(preferencesReady);
   RemoteFirmwareUpdate::begin();
   if (!FirmwareUpdatePolicy::begin()) {
@@ -542,6 +631,7 @@ void loop() {
   FirmwareUpdateScheduler::setNetworkAvailable(
       WiFi.status() == WL_CONNECTED && !wifiManager.getConfigPortalActive());
   cooperativeScheduler.execute();
+  runtimeEvents.process(8);
 
   const bool portalActive = wifiManager.getConfigPortalActive();
 
