@@ -18,6 +18,7 @@
 
 #include "board_pins.h"
 #include "project_config.h"
+#include "firmware_metadata.h"
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -331,6 +332,8 @@ void startNetworkServices() {
     restartRequested = true;
     restartRequestedAt = millis();
   });
+
+  registerFirmwareMetadataRoutes(server);
 
   WebSerial.begin(&server);
   WebSerial.onMessage(handleWebCommand);
