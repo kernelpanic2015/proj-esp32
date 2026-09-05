@@ -174,3 +174,19 @@ The first end-to-end remote download was proven on the physical ESP32:
 ```
 
 Final runtime was `ONLINE` with Wi-Fi and MQTT/TLS connected and NVS configuration preserved. The final normal image reported `http_allowed=false` and rejected the temporary plain-HTTP manifest URL with HTTP 400.
+
+## MQTT update triggers — validated 2026-09-05
+
+MQTT does not carry firmware. It only requests actions from `RemoteFirmwareUpdate`, which is the same transport feeding the signed `FirmwareUpdate` engine used by Web/API.
+
+Validated commands on the per-device `/cmd` topic:
+
+```text
+firmware.status
+firmware.check <manifest-url>
+firmware.update
+```
+
+Physical proof used the device's already provisioned CloudAMQP session. A lab-only local endpoint published the commands onto the real command topic so no broker password appeared in GitHub/Aurora jobs. The broker returned the messages to the subscribed ESP32 client, which reached `AVAILABLE` after `firmware.check` and then downloaded/applied `0.1.10/build 11` after `firmware.update`.
+
+The lab loopback endpoint exists only in the controlled remote-test profile and returned HTTP 404 after booting the final normal image. The final image also returned to HTTPS-only remote-update policy.

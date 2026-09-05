@@ -42,7 +42,8 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Wi-Fi and NVS-backed MQTT configuration proven to survive the rollback cycle
 - [x] require signed package verification on-device before accepting firmware
 - [x] remote signed manifest check + firmware download/apply path validated on hardware
-- [ ] add MQTT and automatic triggers to the validated remote update service
+- [x] MQTT `firmware.check <url>` / `firmware.update` triggers validated through the real broker
+- [ ] add persisted automatic update-check policy
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -52,13 +53,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after the first remote signed OTA proof:
+Validated directly on the physical device on 2026-09-05 after the MQTT-triggered remote OTA proof:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.8`, build `9`, channel `dev`
+- firmware: `0.1.10`, build `11`, channel `dev`
 - running OTA partition: `app1`
 - boot partition: `app1`
 - next update partition: `app0`
@@ -67,9 +68,9 @@ Validated directly on the physical device on 2026-09-05 after the first remote s
 - Wi-Fi: connected
 - MQTT: connected
 - MQTT transport: TLS
-- remote OTA policy in the normal image: HTTPS-only
+- remote OTA policy: HTTPS-only
 
-The remote OTA proof used a temporary lab transition image with HTTP enabled only for the LAN fixture. The ESP32 fetched a signed `manifest.json`, verified its ECDSA P-256 signature, downloaded `firmware.bin`, verified the signed SHA-256, installed to the inactive slot, booted `PENDING_VERIFY`, transitioned to `VALID`, and retained Wi-Fi plus NVS-backed MQTT/TLS configuration. The final `0.1.8/build 9` image rejected the same plain-HTTP manifest URL with HTTP 400.
+MQTT now acts only as a trigger plane for the already validated signed remote UpdateManager. The physical proof published `firmware.check <manifest-url>` and `firmware.update` through the real CloudAMQP broker without exposing credentials to the job; the device fetched/verified/applied the signed package itself and reached `0.1.10/build 11` in `app1/VALID`.
 
 ## OTA partition layout
 

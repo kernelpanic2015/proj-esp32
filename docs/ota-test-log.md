@@ -188,3 +188,19 @@ The signed local Web OTA acceptance path is therefore physically validated. The 
 - Aurora proof job UUID: `dee9ce6c-2b88-4e23-96a0-7db026887780`, completed with exit code `0`.
 
 This proves the transport-independent update architecture: the remote path does not implement a second OTA engine; it feeds the same signed verifier, streaming SHA-256 check, A/B install, application validation and rollback lifecycle already used by Web OTA.
+
+## 2026-09-05 — MQTT-triggered remote signed OTA proof
+
+- Starting image: `0.1.8`, build `9`, `app1/VALID`, `ONLINE`, MQTT/TLS connected.
+- Signed Web transition installed `0.1.9-remote-test`, build `10`, into `app0` and observed `PENDING_VERIFY -> VALID`.
+- The transition profile alone enabled plain HTTP for the LAN fixture and a credential-free MQTT loopback test endpoint.
+- The loopback endpoint published onto the device's real CloudAMQP `/cmd` topic using the existing broker session; no MQTT credentials were placed in the Aurora job.
+- MQTT command `firmware.check http://192.168.1.115:8766/manifest.json` was delivered through the broker and caused the ESP32 remote service to reach `AVAILABLE` with candidate `0.1.10/build 11` prepared and ECDSA-verified.
+- MQTT command `firmware.update` was delivered through the broker and triggered the existing remote downloader/install engine.
+- Target image SHA-256: `1a4714aee70ce16f1cf4a93a12d2c3e227f6358c7d3ca4b57f8f59460fa35e7a`.
+- Target boot: `0.1.10/build 11`, `app1/PENDING_VERIFY -> app1/VALID`.
+- Final runtime: `ONLINE`, Wi-Fi connected, MQTT connected/configured, MQTT TLS enabled, free heap about `163 KiB`.
+- Final normal image reported `http_allowed=false` and the lab-only MQTT loopback endpoint returned HTTP `404`.
+- Aurora proof job UUID: `21510fa8-8260-4782-8904-906c0faf2617`, completed with exit code `0`.
+
+This proves MQTT is a management trigger rather than an OTA transport: signed manifest verification, firmware download, SHA-256 validation, A/B install, `PENDING_VERIFY`, validation and rollback remain inside the common UpdateManager path.

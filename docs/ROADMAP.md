@@ -132,9 +132,9 @@ Candidate validation signals:
 
 On success, mark the image valid. On failure/reboot loop, return to the last known-good image when bootloader capability permits. If native rollback is unavailable in the current framework build, implement/document the compatible fallback before calling this stage complete.
 
-## Stage 5 — Remote transport validated; MQTT and automatic triggers pending
+## Stage 5 — Remote transport + MQTT triggers validated; automatic policy pending
 
-Remote signed check/apply has been proven on the physical ESP32. MQTT and automatic policy remain triggers only; they must reuse that path.
+Remote signed check/apply and MQTT `firmware.check` / `firmware.update` triggers have been proven on the physical ESP32. Automatic policy remains pending and must reuse that same path.
 
 MQTT may request update actions but never transports the firmware payload.
 

@@ -97,6 +97,21 @@ MQTT RX lab/proj-esp32/10A2CCEF49C0/cmd => ping
 
 The notebook subscriber received both periodic telemetry and the `/events` response.
 
+
+## Firmware update trigger commands
+
+Validated through the real CloudAMQP broker on 2026-09-05:
+
+```text
+firmware.status
+firmware.check <https://.../manifest.json>
+firmware.update
+```
+
+`firmware.check` asks the shared remote update service to fetch and verify the signed manifest. `firmware.update` is accepted only after a candidate is in `AVAILABLE` state. MQTT never transports the binary; the ESP32 downloads `firmware.bin` directly and runs the same signed SHA-256/A-B/rollback path used by Web OTA.
+
+A plain `firmware.check` without a URL is currently rejected with `manifest_url_required`. The next milestone persists the update source/policy in NVS, after which the bare command can use the configured source.
+
 ## Reproducible notebook smoke test
 
 Use the CloudAMQP MQTT username/password from the instance credentials. Do not paste the password into repository files.
