@@ -1,0 +1,2 @@
+#!/usr/bin/env bash
+exec /home/kernelpanic/Projects/proj-esp32/.venv-platformio/bin/pio "$@"
