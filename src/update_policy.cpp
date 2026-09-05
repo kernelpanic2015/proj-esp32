@@ -269,6 +269,7 @@ void registerRoutes(AsyncWebServer& server) {
       channel.trim();
     }
 
+    {
     PolicyLock lock;
     if (!lock.locked() || !policyReady) {
       request->send(503, "application/json",
@@ -293,6 +294,8 @@ void registerRoutes(AsyncWebServer& server) {
       request->send(500, "application/json",
                     "{\"error\":\"update_policy_persist_failed\"}");
       return;
+    }
+
     }
 
     request->send(200, "application/json", statusJson());
