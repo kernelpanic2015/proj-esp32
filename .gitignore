@@ -1,5 +1,6 @@
 .pio/
 .venv-platformio/
+.vscode/
 include/secrets.h
 
 # Firmware signing secrets must never be committed.
