@@ -81,3 +81,45 @@ The active document after rollback contained `demo.rule` disabled with the first
 The proof exposed a real interaction between controlled software reboots and DRD. The project uses a 10 s double-reset detection window and a 180 s configuration portal. A second software reboot issued inside the DRD window could therefore be mistaken for human recovery intent.
 
 Intentional firmware restarts now use `RestartService::restartNow()`. A registered hook calls `drd->stop()` before `ESP.restart()`, clearing the DRD marker only for software-controlled restart paths. Two deliberate software reboots inside the 10 s window were physically proven to return ONLINE promptly. Hardware/manual reset behavior remains unchanged and still supports double-reset recovery.
+
+
+## Stage 7B — minimal local rule model
+
+Stage 7B deliberately proves the functional boundary before adding automatic scheduling.
+The first engine supports one in-memory hysteresis rule and virtual input/output components.
+It does **not** load rule semantics from persisted configuration yet and it does not touch GPIO.
+
+Flow under the controlled lab build:
+
+```text
+VirtualInputComponent
+        |
+        | explicit value
+        v
+    RuleEngine
+        |
+        | desired boolean state
+        v
+VirtualActuatorComponent
+```
+
+The demo rule follows the field pattern that motivated the architecture:
+
+```text
+value < on_below   -> desired ON
+value > off_above  -> desired OFF
+inside deadband    -> HOLD current state
+```
+
+Semantic validation rejects invalid IDs, non-finite thresholds and hysteresis where
+`on_below >= off_above`. The engine returns a desired state only; it has no driver or
+GPIO dependency. The virtual actuator owns application of that desired state.
+
+`GET /api/rules/status` is the standard read-only observability endpoint. Controlled
+write/evaluation endpoints exist only in the remote test image behind
+`PROJ_RULE_ENGINE_TEST_ENDPOINTS`.
+
+Stage 7B evaluation is intentionally explicit/manual. Stage 7C will connect the same
+engine to TaskScheduler + EventBus so the evaluation work task is disabled while no
+rule is active and input events can force an iteration. This keeps the distinction
+clear: Stage 7B proves rule semantics; Stage 7C proves runtime scheduling/state flow.

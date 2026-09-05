@@ -353,3 +353,12 @@ The physical proof established `apply -> reboot -> apply -> rollback -> reboot -
 `RestartService` owns software-controlled restart. The service invokes a registered pre-restart hook; on this board the hook calls `DoubleResetDetector::stop()` so intentional reboot does not mimic a human double-reset. Hardware/manual resets are untouched. This keeps recovery semantics separate from update, MQTT, WebSerial and future local-control code.
 
 Stage 7B builds above this store with virtual components first. RuleEngine produces desired state only; actuator/component FSMs own interlocks and eventual hardware drivers.
+
+
+## Stage 7B RuleEngine boundary
+
+The first RuleEngine is deliberately transport- and hardware-independent. A rule
+receives an input value plus current output state and returns a desired output state.
+It never writes GPIO. Controlled virtual components prove the path before real sensors
+or relays exist. Stage 7C will add TaskScheduler/EventBus-driven automatic evaluation;
+Stage 7D will bind validated persisted rule documents to the engine lifecycle.

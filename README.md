@@ -29,7 +29,7 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 **Current physical baseline:** `0.1.29/build 30`, `app0`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. Stage 6 cooperative runtime remains validated.
 
-**Stage 7A is validated:** `ConfigurationStore` provides versioned dual-slot NVS transactions with verified inactive-slot writes, monotonic revisions, boot fallback and rollback. Apply/reject/reboot/rollback/OTA persistence was physically proven. Intentional software reboots clear the DRD marker first. Stage 7B now starts with virtual input/output and minimal local-rule semantics; RuleEngine does not access GPIO.
+**Stage 7A is validated:** `ConfigurationStore` provides versioned dual-slot NVS transactions with verified inactive-slot writes, monotonic revisions, boot fallback and rollback. Apply/reject/reboot/rollback/OTA persistence was physically proven. Intentional software reboots clear the DRD marker first. **Stage 7B is in progress:** a minimal hardware-independent hysteresis RuleEngine and controlled virtual input/output path are implemented for proof; RuleEngine returns desired state and never accesses GPIO.
 
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 

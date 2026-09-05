@@ -54,6 +54,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Wi-Fi reconnect timing migrated to TaskScheduler and physically proven
 - [x] add Supervisor FSM over the common component health model and physically prove `RUNNING -> DEGRADED -> RUNNING`
 - [x] Stage 7A transactional ConfigurationStore: apply/reject/reboot/rollback/OTA persistence physically validated
+- [~] Stage 7B minimal RuleEngine + virtual I/O implementation; physical proof pending
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -86,7 +87,7 @@ Validated directly on the physical device on 2026-09-05 after Stage 7A closure:
 - remote OTA policy: HTTPS-only
 - lab-only Wi-Fi/MQTT test endpoints: absent from the clean image
 
-Stage 6 core runtime is validated and Stage 7A transactional configuration is physically validated. Configuration revision 3 survived reboot, rollback and signed OTA. Intentional software restart now clears the DRD marker before reboot so it cannot masquerade as a human double-reset request. **Stage 7B — the smallest virtual-input/virtual-output local rule model — is next.**
+Stage 6 core runtime is validated and Stage 7A transactional configuration is physically validated. Configuration revision 3 survived reboot, rollback and signed OTA. Intentional software restart now clears the DRD marker before reboot so it cannot masquerade as a human double-reset request. **Stage 7B is in progress:** the minimal hardware-independent hysteresis RuleEngine and controlled virtual input/output path are implemented for physical proof.
 
 ## OTA partition layout
 

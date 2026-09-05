@@ -30,6 +30,11 @@
 #include "core/runtime_events.h"
 #include "core/supervisor.h"
 #include "components/connectivity_component.h"
+#include "rules/rule_engine.h"
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+#include "components/virtual_input_component.h"
+#include "components/virtual_actuator_component.h"
+#endif
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -59,6 +64,11 @@ Scheduler cooperativeScheduler;
 RuntimeCore::EventBus runtimeEvents;
 RuntimeCore::ComponentRegistry runtimeComponents;
 RuntimeCore::Supervisor runtimeSupervisor(runtimeComponents, runtimeEvents);
+Rules::RuleEngine ruleEngine(runtimeEvents);
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+Components::VirtualInputComponent virtualTemperature(runtimeEvents, "virtual.temperature");
+Components::VirtualActuatorComponent virtualHeater(runtimeEvents, "virtual.heater");
+#endif
 
 bool mqttConfigured();
 bool runtimeWifiConnected();
@@ -167,6 +177,12 @@ void handleRuntimeEvent(const RuntimeCore::Event& event) {
             " value=" + String(event.value));
   } else if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::SupervisorStateChanged)) {
     logLine("EVENT supervisor_state value=" + String(event.value));
+  } else if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::InputValueChanged)) {
+    logLine("EVENT input_value source=" + String(event.source) +
+            " milli_value=" + String(event.value));
+  } else if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::RuleEvaluated)) {
+    logLine("EVENT rule_evaluated source=" + String(event.source) +
+            " decision=" + String(event.value));
   }
 }
 
@@ -303,6 +319,7 @@ String statusJson() {
   json += "\"update_policy\":" + FirmwareUpdatePolicy::statusJson() + ",";
   json += "\"update_scheduler\":" + FirmwareUpdateScheduler::statusJson() + ",";
   json += "\"configuration\":" + ConfigurationStore::statusJson() + ",";
+  json += "\"rule_engine\":" + ruleEngine.statusJson() + ",";
   json += "\"components\":" + runtimeComponents.statusJson() + ",";
   json += "\"supervisor\":" + runtimeSupervisor.statusJson() + ",";
   json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
@@ -693,6 +710,7 @@ void startNetworkServices() {
     body += "update_scheduler=/api/update/scheduler\n";
     body += "configuration=/api/configuration\n";
     body += "configuration_status=/api/configuration/status\n";
+    body += "rules_status=/api/rules/status\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
     body += "wifi_runtime=/api/wifi/runtime\n";
@@ -708,6 +726,10 @@ void startNetworkServices() {
 
   server.on("/api/components", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", componentsStatusJson());
+  });
+
+  server.on("/api/rules/status", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", ruleEngine.statusJson());
   });
 
   server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -800,6 +822,79 @@ void startNetworkServices() {
   });
 #endif
 
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  server.on("/api/test/rules/status", HTTP_GET, [](AsyncWebServerRequest* request) {
+    String json = "{\"engine\":" + ruleEngine.statusJson() +
+                  ",\"input\":" + virtualTemperature.statusJson() +
+                  ",\"actuator\":" + virtualHeater.statusJson() + "}";
+    request->send(200, "application/json", json);
+  });
+
+  server.on("/api/test/rules/configure", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!request->hasParam("on_below", true) || !request->hasParam("off_above", true)) {
+      request->send(400, "application/json", "{\"error\":\"thresholds_required\"}");
+      return;
+    }
+    Rules::HysteresisRule rule;
+    rule.id = "demo.temperature.heater";
+    rule.enabled = !request->hasParam("enabled", true) ||
+                   request->getParam("enabled", true)->value() != "0";
+    rule.onBelow = request->getParam("on_below", true)->value().toFloat();
+    rule.offAbove = request->getParam("off_above", true)->value().toFloat();
+    String error;
+    if (!ruleEngine.configure(rule, error)) {
+      request->send(400, "application/json", String("{\"error\":\"") + error + "\"}");
+      return;
+    }
+    virtualHeater.enable(false);
+    request->send(200, "application/json", ruleEngine.statusJson());
+  });
+
+  server.on("/api/test/rules/input", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!request->hasParam("value", true)) {
+      request->send(400, "application/json", "{\"error\":\"value_required\"}");
+      return;
+    }
+    const float value = request->getParam("value", true)->value().toFloat();
+    if (!virtualTemperature.setValue(value)) {
+      request->send(400, "application/json", "{\"error\":\"value_invalid\"}");
+      return;
+    }
+    request->send(200, "application/json", virtualTemperature.statusJson());
+  });
+
+  server.on("/api/test/rules/evaluate", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!virtualTemperature.hasValue()) {
+      request->send(409, "application/json", "{\"error\":\"input_not_ready\"}");
+      return;
+    }
+    if (!virtualHeater.enabled()) virtualHeater.enable(false);
+    bool desired = virtualHeater.isOn();
+    Rules::RuleDecision decision = Rules::RuleDecision::None;
+    String error;
+    if (!ruleEngine.evaluate(virtualTemperature.value(), virtualHeater.isOn(),
+                             desired, decision, error)) {
+      request->send(409, "application/json", String("{\"error\":\"") + error + "\"}");
+      return;
+    }
+    if (decision != Rules::RuleDecision::Disabled && !virtualHeater.applyDesired(desired)) {
+      request->send(500, "application/json", "{\"error\":\"actuator_rejected\"}");
+      return;
+    }
+    String json = "{\"engine\":" + ruleEngine.statusJson() +
+                  ",\"input\":" + virtualTemperature.statusJson() +
+                  ",\"actuator\":" + virtualHeater.statusJson() + "}";
+    request->send(200, "application/json", json);
+  });
+
+  server.on("/api/test/rules/reset", HTTP_POST, [](AsyncWebServerRequest* request) {
+    ruleEngine.clear();
+    virtualTemperature.disable();
+    virtualHeater.disable();
+    request->send(200, "application/json", "{\"reset\":true}");
+  });
+#endif
+
   registerFirmwareMetadataRoutes(server);
   FirmwareUpdate::registerRoutes(server);
   RemoteFirmwareUpdate::registerRoutes(server);
@@ -856,9 +951,16 @@ void setup() {
   if (!ConfigurationStore::begin()) {
     Serial.println("CONFIGURATION_STORE_INIT_FAILED");
   }
+  if (!ruleEngine.begin()) {
+    Serial.println("RULE_ENGINE_INIT_FAILED");
+  }
 
   runtimeEvents.subscribe(handleRuntimeEvent);
   runtimeComponents.add(connectivityComponent);
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  runtimeComponents.add(virtualTemperature);
+  runtimeComponents.add(virtualHeater);
+#endif
   if (!runtimeComponents.beginAll()) {
     Serial.println("RUNTIME_COMPONENT_INIT_DEGRADED");
   }
