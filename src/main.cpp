@@ -38,12 +38,10 @@ AsyncWebServer server(80);
 WiFiClient networkClient;
 MQTTClient mqttClient(512);
 WiFiManager wifiManager;
-DoubleResetDetector drd(ProjectConfig::DOUBLE_RESET_TIMEOUT_SECONDS,
-                        ProjectConfig::DOUBLE_RESET_STORAGE_ADDRESS);
+DoubleResetDetector* drd = nullptr;
 
 bool webStarted = false;
 bool networkServicesStarted = false;
-bool portalWasOpened = false;
 AppState appState = AppState::BOOT;
 String deviceId;
 String topicState;
@@ -129,8 +127,7 @@ String statusJson() {
 }
 
 void mqttMessageReceived(String& topic, String& payload) {
-  String line = "MQTT RX " + topic + " => " + payload;
-  logLine(line);
+  logLine("MQTT RX " + topic + " => " + payload);
 
   if (payload == "ping" || payload == "status") {
     mqttClient.publish(topicEvents, statusJson());
@@ -184,7 +181,8 @@ void handleWebCommand(uint8_t* data, size_t len) {
 }
 
 void startNetworkServices() {
-  if (networkServicesStarted || WiFi.status() != WL_CONNECTED) {
+  if (networkServicesStarted || WiFi.status() != WL_CONNECTED ||
+      wifiManager.getConfigPortalActive()) {
     return;
   }
 
@@ -258,10 +256,15 @@ void setup() {
   deviceId = buildDeviceId();
   logLine("device_id=" + deviceId);
 
+  // Construct DRD only after the Arduino/ESP32 runtime has initialized NVS.
+  // A global constructor caused EEPROM/NVS initialization errors on this board.
+  drd = new DoubleResetDetector(ProjectConfig::DOUBLE_RESET_TIMEOUT_SECONDS,
+                                ProjectConfig::DOUBLE_RESET_STORAGE_ADDRESS);
+
+  wifiManager.setConfigPortalBlocking(false);
   wifiManager.setConfigPortalTimeout(ProjectConfig::CONFIG_PORTAL_TIMEOUT_SECONDS);
   wifiManager.setConnectTimeout(20);
   wifiManager.setAPCallback([](WiFiManager*) {
-    portalWasOpened = true;
     if (appState == AppState::WIFI_CONNECTING) {
       machine.trigger(EVT_PORTAL_OPEN);
     }
@@ -269,45 +272,61 @@ void setup() {
     logLine("CONFIG_PORTAL_IP=" + WiFi.softAPIP().toString());
   });
 
-  bool forceConfig = drd.detectDoubleReset();
-  bool connected = false;
+  const bool forceConfig = drd->detectDoubleReset();
 
   if (forceConfig) {
     logLine("DOUBLE_RESET_DETECTED");
     machine.trigger(EVT_FORCE_CONFIG);
-    connected = wifiManager.startConfigPortal(ProjectConfig::CONFIG_PORTAL_SSID);
-    machine.trigger(EVT_CONFIG_DONE);
+    wifiManager.startConfigPortal(ProjectConfig::CONFIG_PORTAL_SSID);
   } else {
     machine.trigger(EVT_START_NETWORK);
-    connected = wifiManager.autoConnect(ProjectConfig::CONFIG_PORTAL_SSID);
-    if (portalWasOpened && appState == AppState::CONFIG_PORTAL) {
-      machine.trigger(EVT_CONFIG_DONE);
+    if (wifiManager.autoConnect(ProjectConfig::CONFIG_PORTAL_SSID) &&
+        WiFi.status() == WL_CONNECTED) {
+      logLine("WIFI_CONNECTED ssid=" + WiFi.SSID());
+      logLine("WIFI_IP=" + WiFi.localIP().toString());
+      machine.trigger(EVT_WIFI_UP);
+      startNetworkServices();
     }
   }
 
-  if (connected && WiFi.status() == WL_CONNECTED) {
-    logLine("WIFI_CONNECTED ssid=" + WiFi.SSID());
-    logLine("WIFI_IP=" + WiFi.localIP().toString());
-    machine.trigger(EVT_WIFI_UP);
-    startNetworkServices();
-  } else {
-    logLine("WIFI_NOT_CONNECTED");
-    machine.trigger(EVT_WIFI_DOWN);
+  if (wifiManager.getConfigPortalActive()) {
+    logLine("CONFIG_PORTAL_RUNNING");
   }
 
   Serial.println("PROJ_ESP32_SETUP_DONE");
 }
 
 void loop() {
-  drd.loop();
+  if (drd) {
+    drd->loop();
+  }
+
+  wifiManager.process();
   machine.run_machine();
+
+  const bool portalActive = wifiManager.getConfigPortalActive();
+
+  if (portalActive) {
+    if (appState == AppState::WIFI_CONNECTING) {
+      machine.trigger(EVT_PORTAL_OPEN);
+    }
+    delay(2);
+    return;
+  }
+
+  if (appState == AppState::CONFIG_PORTAL) {
+    machine.trigger(EVT_CONFIG_DONE);
+  }
 
   const bool wifiUp = WiFi.status() == WL_CONNECTED;
 
   if (!wifiUp) {
-    if (appState == AppState::ONLINE) {
+    if (appState == AppState::WIFI_CONNECTING) {
+      machine.trigger(EVT_WIFI_DOWN);
+    } else if (appState == AppState::ONLINE) {
       machine.trigger(EVT_WIFI_DOWN);
     }
+
     if (millis() - lastWifiRetry >= ProjectConfig::MQTT_RECONNECT_INTERVAL_MS) {
       lastWifiRetry = millis();
       WiFi.reconnect();
