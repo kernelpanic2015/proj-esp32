@@ -1,3 +1,11 @@
 .pio/
 .venv-platformio/
 include/secrets.h
+
+# Firmware signing secrets must never be committed.
+*.private.pem
+*.key.pem
+keys/private/
+
+# Generated release artifacts.
+dist/
