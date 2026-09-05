@@ -75,7 +75,9 @@ As the modular Supervisor/ComponentRegistry is introduced, the validation policy
 
 Wi-Fi, MQTT, Internet, SD and non-critical sensors must not be mandatory for validation. Those can be degraded independently.
 
-If the local critical checks fail through the validation timeout, UpdateManager marks the candidate invalid and requests rollback/reboot. An image that crashes or repeatedly reboots before validation must also be recoverable by the bootloader's pending-image semantics.
+If the local critical checks fail through the validation timeout, UpdateManager marks the candidate invalid and requests rollback/reboot. This controlled-failure path has now been proven on the physical device.
+
+An image which crashes or repeatedly reboots before the application can explicitly reject it remains a separate later recovery test.
 
 ## Control surfaces
 
@@ -92,7 +94,7 @@ No control surface gets a separate OTA implementation.
 
 ## Web development flow
 
-The current local Web/API upload proves partitioning, slot switching, version reporting and validation before remote distribution/security layers are enforced on-device.
+The current local Web/API upload proves partitioning, slot switching, version reporting, application-controlled validation and bootloader rollback before remote distribution/security layers are enforced on-device.
 
 Endpoints:
 
@@ -113,7 +115,7 @@ The production update trust model uses ECDSA P-256 signatures over SHA-256.
 - public verification key: committed/embedded in firmware
 - private key permissions: owner-only
 - release manifest generation/signature verification already validated on the build host
-- next security milestone: reject unsigned/invalid packages on the ESP32 itself
+- next security milestone: reject unsigned/invalid packages on the ESP32 itself before installation
 
 Signing authenticates the image. Encryption is a separate later layer for firmware confidentiality.
 
@@ -136,8 +138,8 @@ The manifest will eventually be signed and include at least model, hardware revi
 
 Validation is staged to isolate failure modes:
 
-1. **Healthy candidate** — prove `PENDING_VERIFY -> VALID`. Completed with `0.1.3/build 4`.
-2. **Controlled local validation failure** — a dedicated PlatformIO test profile forces the UpdateManager health result false; after timeout it must mark the candidate invalid and return to the previous valid image.
-3. **Interrupted/crashing first boot** — after explicit rollback is proven, test that a candidate which never reaches validation is also recovered by the bootloader.
+1. **Healthy candidate** — prove `PENDING_VERIFY -> VALID`. **Completed** with `0.1.3/build 4`.
+2. **Controlled local validation failure** — dedicated profile forces the UpdateManager health result false and requests rollback. **Completed** with `0.1.4-rollback-test/build 5`: the candidate ran in `app0/PENDING_VERIFY`, was marked invalid, and the bootloader returned to `0.1.3/build 4` in `app1/VALID`.
+3. **Interrupted/crashing first boot** — still pending; only perform after the signed-update acceptance path is hardened enough to make the test worthwhile.
 
-For every rollback test, NVS configuration and unrelated local functionality must survive.
+The controlled rollback proof also confirmed that NVS-backed Wi-Fi/MQTT configuration and unrelated local functionality survive the update/rollback cycle. Exact observations are recorded in `docs/ota-test-log.md`.
