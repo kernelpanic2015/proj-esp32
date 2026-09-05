@@ -1,11 +1,27 @@
 #!/usr/bin/env python3
-"""Bounded serial capture for non-interactive/Aurora ESP32 jobs."""
+"""Bounded serial capture for non-interactive/Aurora ESP32 jobs.
+
+The port is configured with DTR/RTS deasserted *before* opening it. This avoids
+creating an unintended reset pulse on ESP32 boards whose CP2102 DTR/RTS lines
+are wired to EN/IO0 for automatic bootloader entry.
+"""
 
 import argparse
 import sys
 import time
 
 import serial
+
+
+def open_without_reset(port: str, baud: int) -> serial.Serial:
+    ser = serial.Serial()
+    ser.port = port
+    ser.baudrate = baud
+    ser.timeout = 0.25
+    ser.dtr = False
+    ser.rts = False
+    ser.open()
+    return ser
 
 
 def main() -> int:
@@ -19,10 +35,8 @@ def main() -> int:
     seen = {marker: False for marker in args.expect}
     end = time.time() + args.seconds
 
-    with serial.Serial(args.port, args.baud, timeout=0.25) as ser:
-        # Do not intentionally hold the ESP32 in reset/bootloader mode.
-        ser.dtr = False
-        ser.rts = False
+    ser = open_without_reset(args.port, args.baud)
+    try:
         while time.time() < end:
             raw = ser.readline()
             if not raw:
@@ -32,6 +46,8 @@ def main() -> int:
             for marker in seen:
                 if marker in line:
                     seen[marker] = True
+    finally:
+        ser.close()
 
     missing = [marker for marker, found in seen.items() if not found]
     if missing:
