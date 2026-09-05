@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
 #include <ArduinoOTA.h>
@@ -7,6 +8,7 @@
 #include <ESPAsyncWebServer.h>
 #include <WebSerial.h>
 #include <MQTT.h>
+#include <Preferences.h>
 #include <Fsm.h>
 
 #define ESP_DRD_USE_EEPROM true
@@ -35,19 +37,29 @@ enum class AppState {
 };
 
 AsyncWebServer server(80);
-WiFiClient networkClient;
+WiFiClient plainNetworkClient;
+WiFiClientSecure secureNetworkClient;
 MQTTClient mqttClient(512);
 WiFiManager wifiManager;
+Preferences preferences;
 DoubleResetDetector* drd = nullptr;
 
 bool webStarted = false;
 bool networkServicesStarted = false;
+bool preferencesReady = false;
+bool restartRequested = false;
+unsigned long restartRequestedAt = 0;
 AppState appState = AppState::BOOT;
 String deviceId;
 String topicState;
 String topicTelemetry;
 String topicEvents;
 String topicCommand;
+String mqttHost;
+uint16_t mqttPort = 1883;
+String mqttUsername;
+String mqttPassword;
+bool mqttTls = false;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastHeartbeat = 0;
 unsigned long lastWifiRetry = 0;
@@ -111,6 +123,37 @@ String buildDeviceId() {
   return String(buffer);
 }
 
+String htmlEscape(String value) {
+  value.replace("&", "&amp;");
+  value.replace("\"", "&quot;");
+  value.replace("<", "&lt;");
+  value.replace(">", "&gt;");
+  return value;
+}
+
+void loadMqttConfig() {
+  mqttHost = ProjectConfig::MQTT_HOST;
+  mqttPort = ProjectConfig::MQTT_PORT;
+  mqttUsername = "";
+  mqttPassword = "";
+  mqttTls = false;
+
+  if (!preferencesReady) {
+    return;
+  }
+
+  mqttHost = preferences.getString("mqtt_host", mqttHost);
+  mqttPort = preferences.getUShort("mqtt_port", mqttPort);
+  mqttUsername = preferences.getString("mqtt_user", "");
+  mqttPassword = preferences.getString("mqtt_pass", "");
+  mqttTls = preferences.getBool("mqtt_tls", false);
+}
+
+bool mqttConfigured() {
+  return mqttHost.length() > 0 && mqttPort > 0 &&
+         mqttUsername.length() > 0 && mqttPassword.length() > 0;
+}
+
 String statusJson() {
   String json = "{";
   json += "\"device\":\"" + deviceId + "\",";
@@ -120,6 +163,8 @@ String statusJson() {
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
   json += "\"rssi\":" + String(WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0) + ",";
   json += "\"mqtt\":" + String(mqttClient.connected() ? "true" : "false") + ",";
+  json += "\"mqtt_configured\":" + String(mqttConfigured() ? "true" : "false") + ",";
+  json += "\"mqtt_tls\":" + String(mqttTls ? "true" : "false") + ",";
   json += "\"uptime_ms\":" + String(millis()) + ",";
   json += "\"free_heap\":" + String(ESP.getFreeHeap());
   json += "}";
@@ -143,11 +188,17 @@ bool connectMqtt() {
     return mqttClient.connected();
   }
 
+  if (!mqttConfigured()) {
+    logLine("MQTT not configured; open /config/mqtt");
+    return false;
+  }
+
   lastMqttAttempt = millis();
   String clientId = String(ProjectConfig::DEVICE_HOSTNAME) + "-" + deviceId;
-  logLine("MQTT connecting to " + String(ProjectConfig::MQTT_HOST) + ":" + String(ProjectConfig::MQTT_PORT));
+  logLine("MQTT connecting to " + mqttHost + ":" + String(mqttPort) +
+          (mqttTls ? " TLS" : ""));
 
-  if (!mqttClient.connect(clientId.c_str())) {
+  if (!mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str())) {
     logLine("MQTT connection failed");
     return false;
   }
@@ -180,6 +231,26 @@ void handleWebCommand(uint8_t* data, size_t len) {
   }
 }
 
+String mqttConfigPage() {
+  String page = "<!doctype html><html><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>proj-esp32 MQTT</title></head><body>";
+  page += "<h1>proj-esp32 MQTT</h1>";
+  page += "<p>Credentials are stored only in ESP32 NVS.</p>";
+  page += "<form method='post' action='/config/mqtt'>";
+  page += "<label>Host <input name='host' required value='" + htmlEscape(mqttHost) + "'></label><br>";
+  page += "<label>Port <input name='port' type='number' min='1' max='65535' required value='" + String(mqttPort) + "'></label><br>";
+  page += "<label>Username <input name='username' required value='" + htmlEscape(mqttUsername) + "'></label><br>";
+  page += "<label>Password <input name='password' type='password' placeholder='";
+  page += mqttPassword.length() ? "leave blank to keep saved password" : "required on first save";
+  page += "'></label><br>";
+  page += "<label><input name='tls' type='checkbox' value='1'";
+  if (mqttTls) page += " checked";
+  page += "> TLS</label><br>";
+  page += "<button type='submit'>Save and reboot</button></form>";
+  page += "<p><a href='/'>Back</a> | <a href='/api/status'>Status</a></p>";
+  page += "</body></html>";
+  return page;
+}
+
 void startNetworkServices() {
   if (networkServicesStarted || WiFi.status() != WL_CONNECTED ||
       wifiManager.getConfigPortalActive()) {
@@ -203,11 +274,54 @@ void startNetworkServices() {
     body += "state=" + String(stateName(appState)) + "\n";
     body += "status=/api/status\n";
     body += "console=/webserial\n";
+    body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
   });
 
   server.on("/api/status", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", statusJson());
+  });
+
+  server.on("/config/mqtt", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "text/html", mqttConfigPage());
+  });
+
+  server.on("/config/mqtt", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!preferencesReady || !request->hasParam("host", true) ||
+        !request->hasParam("port", true) || !request->hasParam("username", true)) {
+      request->send(400, "text/plain", "missing required fields");
+      return;
+    }
+
+    String newHost = request->getParam("host", true)->value();
+    String newUser = request->getParam("username", true)->value();
+    uint32_t parsedPort = request->getParam("port", true)->value().toInt();
+    String newPassword = request->hasParam("password", true)
+                             ? request->getParam("password", true)->value()
+                             : String();
+    bool newTls = request->hasParam("tls", true);
+
+    newHost.trim();
+    newUser.trim();
+    if (!newHost.length() || !newUser.length() || parsedPort == 0 || parsedPort > 65535) {
+      request->send(400, "text/plain", "invalid MQTT settings");
+      return;
+    }
+
+    preferences.putString("mqtt_host", newHost);
+    preferences.putUShort("mqtt_port", static_cast<uint16_t>(parsedPort));
+    preferences.putString("mqtt_user", newUser);
+    preferences.putBool("mqtt_tls", newTls);
+    if (newPassword.length()) {
+      preferences.putString("mqtt_pass", newPassword);
+    } else if (!mqttPassword.length()) {
+      request->send(400, "text/plain", "password required on first save");
+      return;
+    }
+
+    request->send(200, "text/plain", "MQTT settings saved. Rebooting...\n");
+    restartRequested = true;
+    restartRequestedAt = millis();
   });
 
   WebSerial.begin(&server);
@@ -223,7 +337,14 @@ void startNetworkServices() {
   });
   ArduinoOTA.begin();
 
-  mqttClient.begin(ProjectConfig::MQTT_HOST, ProjectConfig::MQTT_PORT, networkClient);
+  if (mqttTls) {
+    // Development mode: encrypted transport without CA verification.
+    // Replace setInsecure() with a CA certificate before production use.
+    secureNetworkClient.setInsecure();
+    mqttClient.begin(mqttHost.c_str(), mqttPort, secureNetworkClient);
+  } else {
+    mqttClient.begin(mqttHost.c_str(), mqttPort, plainNetworkClient);
+  }
   mqttClient.onMessage(mqttMessageReceived);
 
   networkServicesStarted = true;
@@ -252,9 +373,13 @@ void setup() {
   configureStateMachine();
   machine.run_machine();
 
+  preferencesReady = preferences.begin("proj-esp32", false);
+  loadMqttConfig();
+
   WiFi.mode(WIFI_STA);
   deviceId = buildDeviceId();
   logLine("device_id=" + deviceId);
+  logLine(String("MQTT configured=") + (mqttConfigured() ? "yes" : "no"));
 
   // Construct DRD only after the Arduino/ESP32 runtime has initialized NVS.
   // A global constructor caused EEPROM/NVS initialization errors on this board.
@@ -297,6 +422,10 @@ void setup() {
 }
 
 void loop() {
+  if (restartRequested && millis() - restartRequestedAt > 750) {
+    ESP.restart();
+  }
+
   if (drd) {
     drd->loop();
   }
@@ -344,7 +473,7 @@ void loop() {
   WebSerial.loop();
   mqttClient.loop();
 
-  if (!mqttClient.connected() &&
+  if (!mqttClient.connected() && mqttConfigured() &&
       millis() - lastMqttAttempt >= ProjectConfig::MQTT_RECONNECT_INTERVAL_MS) {
     connectMqtt();
   }
