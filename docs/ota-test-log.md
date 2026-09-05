@@ -204,3 +204,19 @@ This proves the transport-independent update architecture: the remote path does 
 - Aurora proof job UUID: `21510fa8-8260-4782-8904-906c0faf2617`, completed with exit code `0`.
 
 This proves MQTT is a management trigger rather than an OTA transport: signed manifest verification, firmware download, SHA-256 validation, A/B install, `PENDING_VERIFY`, validation and rollback remain inside the common UpdateManager path.
+
+## 2026-09-05 — update policy persistence and bare firmware.check proof
+
+- Starting image: `0.1.10/build 11`, `app1/VALID`, ONLINE with MQTT/TLS.
+- Installed signed policy-capable transition image `0.1.11-remote-test/build 12` to `app0`; observed `PENDING_VERIFY -> VALID`.
+- Stored NVS policy revision `1` with HTTPS manifest URL, channel `dev`, interval 3600 s, auto-enabled `false`.
+- Policy POST returned `ready=true`; a subsequent GET matched the saved document.
+- Explicit reboot was triggered through the real MQTT command round trip; after reconnect, revision, URL and `policy_updated` result were unchanged.
+- Bare MQTT `firmware.check` (no URL argument) resolved the saved policy URL and reached remote state `AVAILABLE`; prepared candidate was `0.1.12/build 13`.
+- `last_result` changed to `available` without changing policy revision.
+- MQTT `firmware.update` installed the signed target; observed `0.1.12/app1/PENDING_VERIFY -> VALID`.
+- Final policy remained revision `1`, preserved the same HTTPS manifest URL, and persisted `last_result=install_pending_reboot`.
+- Final runtime remained ONLINE with Wi-Fi and MQTT/TLS connected; normal image restored HTTPS-only policy and removed the lab MQTT loopback endpoint (HTTP 404).
+- Aurora proof issue #644 completed successfully.
+
+This proves NVS update-policy persistence independently across reboot and A/B OTA, and proves that `firmware.check` can use the saved policy source without transmitting a manifest URL in the MQTT command.

@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after the MQTT-triggered remote OTA proof:
+Current physical device state after the persistent signed update-policy proof:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.10`
-- build: `11`
+- firmware: `0.1.12`
+- build: `13`
 - channel: `dev`
 - running partition: `app1`
 - boot partition: `app1`
@@ -58,25 +58,9 @@ Current physical device state after the MQTT-triggered remote OTA proof:
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 
-Validated OTA control surfaces now share one signed install engine: manual Web prepare/upload, remote HTTP API check/apply, and MQTT trigger commands. MQTT transports only the request; manifest/signature and firmware are fetched directly by the ESP32.
+Signed Web OTA, remote check/apply and MQTT triggers share one UpdateManager path. The NVS update-policy document now provides the default manifest source for a bare `firmware.check`; the saved policy survived both a reboot and the OTA transition to `0.1.12/build 13`.
 
-Resolved dependency baseline:
-
-- arduino-fsm 2.2.0
-- ESP_DoubleResetDetector 1.3.2
-- WiFiManager 2.0.17
-- PubSubClient 2.8.0
-- AsyncTCP 3.5.0
-- ESPAsyncWebServer 3.12.0
-- WebSerial 2.1.2
-- ArduinoJson 6.21.x
-- ESPmDNS 2.0.0
-- Preferences / WiFi / WiFiClientSecure / HTTPClient / Update from Arduino-ESP32
-
-Latest normal build after MQTT-trigger integration:
-
-- RAM: about 54.3 KiB / 320 KiB (16.6%)
-- firmware: about 1.20 MiB / 1.6875 MiB application slot (about 67.9%)
+Resolved dependency baseline is unchanged. Latest normal build remains about 16.6% RAM and 68.4% of each 1728 KiB OTA slot.
 
 ## Flash layout — validated
 
@@ -309,8 +293,8 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. persist remote-update policy in NVS (`enabled`, manifest URL, channel, interval, last result) so bare `firmware.check` and automatic checks share the same configured source;
-2. add the nonblocking automatic-check scheduler without making local control depend on connectivity;
+1. add the nonblocking automatic-check scheduler using the persisted NVS policy, with connectivity failures treated only as degraded update service state;
+2. add explicit update-policy health/last-attempt metadata without writing NVS on high-frequency runtime paths;
 3. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
 4. harden MQTT with LWT and reconnect backoff/jitter;
 5. continue modular runtime (`ComponentRegistry`, health model, Supervisor, local rules/scheduler);

@@ -178,6 +178,10 @@ MQTT/PubSubClient connection failed state=4
 
 This correctly exposed an authentication problem caused by the password stored in ESP32 NVS. Re-saving the correct password through `/config/mqtt` immediately produced a valid broker session and the end-to-end round-trip passed.
 
+## OTA trigger commands — validated
+
+The command topic now supports `firmware.status`, `firmware.check`, `firmware.check <manifest-url>`, and `firmware.update`. A bare `firmware.check` reads the persisted NVS update policy and uses its saved HTTPS manifest URL. This was physically proven across an explicit reboot and a complete OTA to `0.1.12/build 13`; the broker remains only the trigger plane.
+
 ## Next hardening work
 
 - add Last Will and Testament with retained offline state;

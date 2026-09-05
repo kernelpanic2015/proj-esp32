@@ -43,7 +43,8 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] require signed package verification on-device before accepting firmware
 - [x] remote signed manifest check + firmware download/apply path validated on hardware
 - [x] MQTT `firmware.check <url>` / `firmware.update` triggers validated through the real broker
-- [ ] add persisted automatic update-check policy
+- [x] persist remote-update policy in NVS; reboot/OTA persistence and bare `firmware.check` proven
+- [ ] add nonblocking automatic update-check scheduler
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -53,13 +54,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after the MQTT-triggered remote OTA proof:
+Validated directly on the physical device on 2026-09-05 after the persistent update-policy proof:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.10`, build `11`, channel `dev`
+- firmware: `0.1.12`, build `13`, channel `dev`
 - running OTA partition: `app1`
 - boot partition: `app1`
 - next update partition: `app0`
@@ -69,8 +70,9 @@ Validated directly on the physical device on 2026-09-05 after the MQTT-triggered
 - MQTT: connected
 - MQTT transport: TLS
 - remote OTA policy: HTTPS-only
+- persisted update-policy revision: `1`
 
-MQTT now acts only as a trigger plane for the already validated signed remote UpdateManager. The physical proof published `firmware.check <manifest-url>` and `firmware.update` through the real CloudAMQP broker without exposing credentials to the job; the device fetched/verified/applied the signed package itself and reached `0.1.10/build 11` in `app1/VALID`.
+The update policy is stored transactionally in NVS. A saved HTTPS manifest URL survived an explicit reboot and a complete A/B OTA cycle. A bare MQTT `firmware.check` resolved the saved policy URL, reached `AVAILABLE`, and `firmware.update` installed `0.1.12/build 13`. `last_result` persisted as `install_pending_reboot` while the policy revision remained unchanged.
 
 ## OTA partition layout
 
