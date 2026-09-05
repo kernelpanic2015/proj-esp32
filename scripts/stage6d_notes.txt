@@ -1,0 +1,1 @@
+Stage 6D temporary staging helpers are removed during closure.
