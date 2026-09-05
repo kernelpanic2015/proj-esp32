@@ -20,14 +20,24 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] runtime heartbeat read back from ESP32 over serial
 - [x] GitHub repository created and local project linked
 - [x] exact PlatformIO board ID `nodemcu-32s` verified
-- [ ] base firmware dependencies compile together
-- [ ] double-reset recovery path validated
-- [ ] Wi-Fi provisioning portal validated
-- [ ] Web UI/WebSerial validated
+- [x] base firmware dependencies compile together
+- [x] double-reset recovery path validated with controlled first/second reset
+- [x] WiFiManager config portal runs nonblocking and AP `proj-esp32-setup` is visible
+- [ ] provision Wi-Fi credentials and validate STA `ONLINE` state
+- [ ] Web UI `/`, `/api/status` and `/webserial` validated over STA Wi-Fi
 - [ ] MQTT publish/subscribe validated against notebook broker
-- [ ] OTA validated
+- [ ] OTA validated over Wi-Fi
 - [ ] TFT controller and pin mapping confirmed
 - [ ] XPT2046 touch validated
+
+## Current physical state
+
+The most recent controlled test ended in `CONFIG_PORTAL`. Unless the board has been reset or powered off since then, it should be advertising:
+
+- SSID: `proj-esp32-setup`
+- captive portal/AP IP: `192.168.4.1`
+
+Use a phone or another client for provisioning when possible so the `kpnote` connection used by Aurora is not disrupted.
 
 ## Source of truth
 
