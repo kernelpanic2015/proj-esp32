@@ -3,7 +3,6 @@
 #include <WiFiClientSecure.h>
 #include <WiFiManager.h>
 #include <ESPmDNS.h>
-#include <ArduinoOTA.h>
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WebSerial.h>
@@ -347,14 +346,6 @@ void startNetworkServices() {
   server.begin();
   webStarted = true;
 
-  ArduinoOTA.setHostname(ProjectConfig::DEVICE_HOSTNAME);
-  ArduinoOTA.onStart([]() { logLine("OTA start"); });
-  ArduinoOTA.onEnd([]() { logLine("OTA end"); });
-  ArduinoOTA.onError([](ota_error_t error) {
-    logLine("OTA error=" + String(static_cast<unsigned int>(error)));
-  });
-  ArduinoOTA.begin();
-
   if (mqttTls) {
     // Development mode: encrypted transport without CA verification.
     // Replace setInsecure() with a CA certificate before production use.
@@ -492,7 +483,6 @@ void loop() {
   }
 
   startNetworkServices();
-  ArduinoOTA.handle();
   WebSerial.loop();
   mqttClient.loop();
 
