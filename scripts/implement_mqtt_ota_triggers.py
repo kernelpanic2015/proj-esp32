@@ -14,7 +14,8 @@ bool requestCheck(const String& manifestUrl, String& error);
 bool requestApply(String& error);''')
 p.write_text(s)
 
-# Refactor web routes to call the same public trigger functions.
+# Refactor Web routes to use a public trigger API while preserving the current
+# mutex/StateLock synchronization model.
 p = Path('src/remote_update_service.cpp')
 s = p.read_text()
 needle = 'void registerRoutes(AsyncWebServer& server) {'
@@ -28,23 +29,23 @@ if 'bool requestCheck(const String& requestedUrl' not in s:
     return false;
   }
 
-  portENTER_CRITICAL(&stateMux);
-  const bool busy = workerTask != nullptr || remoteState == RemoteState::CHECKING ||
-                    remoteState == RemoteState::DOWNLOADING ||
-                    remoteState == RemoteState::CHECK_QUEUED ||
-                    remoteState == RemoteState::APPLY_QUEUED;
-  if (!busy) {
+  {
+    StateLock lock;
+    if (!lock.locked()) {
+      error = "state_lock_timeout";
+      return false;
+    }
+    if (workerTask != nullptr || remoteState == RemoteState::CHECKING ||
+        remoteState == RemoteState::DOWNLOADING) {
+      error = "remote_update_busy";
+      return false;
+    }
     manifestUrl = url;
     baseUrl = "";
     lastError = "";
-    remoteState = RemoteState::CHECK_QUEUED;
+    remoteState = RemoteState::IDLE;
   }
-  portEXIT_CRITICAL(&stateMux);
 
-  if (busy) {
-    error = "remote_update_busy";
-    return false;
-  }
   if (!startWorker(checkWorker, "ota-check", error)) {
     setFailed(error);
     return false;
@@ -54,15 +55,18 @@ if 'bool requestCheck(const String& requestedUrl' not in s:
 
 bool requestApply(String& error) {
   error = "";
-  portENTER_CRITICAL(&stateMux);
-  const bool available = remoteState == RemoteState::AVAILABLE && workerTask == nullptr;
-  if (available) remoteState = RemoteState::APPLY_QUEUED;
-  portEXIT_CRITICAL(&stateMux);
-
-  if (!available) {
-    error = "remote_update_not_available";
-    return false;
+  {
+    StateLock lock;
+    if (!lock.locked()) {
+      error = "state_lock_timeout";
+      return false;
+    }
+    if (remoteState != RemoteState::AVAILABLE || workerTask != nullptr) {
+      error = "remote_update_not_available";
+      return false;
+    }
   }
+
   if (!startWorker(applyWorker, "ota-apply", error)) {
     setFailed(error);
     return false;
@@ -83,7 +87,9 @@ check_route = r'''  server.on("/api/update/check", HTTP_POST, [](AsyncWebServerR
 
     String error;
     if (!requestCheck(request->getParam("manifest_url", true)->value(), error)) {
-      const int code = error == "remote_update_busy" ? 409 : 400;
+      int code = 400;
+      if (error == "remote_update_busy") code = 409;
+      else if (error == "state_lock_timeout") code = 503;
       request->send(code, "application/json", "{\"error\":\"" + error + "\"}");
       return;
     }
@@ -94,12 +100,12 @@ check_route = r'''  server.on("/api/update/check", HTTP_POST, [](AsyncWebServerR
 s = s[:start] + check_route + s[end:]
 
 start = s.index('  server.on("/api/update/apply", HTTP_POST')
-# Route is last item before registerRoutes closing brace / namespace closing.
 end = s.index('\n  });\n}\n\n}  // namespace RemoteFirmwareUpdate', start) + len('\n  });')
 apply_route = r'''  server.on("/api/update/apply", HTTP_POST, [](AsyncWebServerRequest* request) {
     String error;
     if (!requestApply(error)) {
-      request->send(409, "application/json", "{\"error\":\"" + error + "\"}");
+      const int code = error == "state_lock_timeout" ? 503 : 409;
+      request->send(code, "application/json", "{\"error\":\"" + error + "\"}");
       return;
     }
     request->send(202, "application/json", statusJson());
@@ -182,8 +188,8 @@ s = s[:start] + handler + s[end:]
 
 s = s.replace('  mqttClient.setBufferSize(512);', '  mqttClient.setBufferSize(1024);', 1)
 
-# Lab-only endpoint publishes onto the real MQTT command topic. This allows
-# physical proof without putting broker credentials in GitHub/Aurora jobs.
+# Lab-only endpoint publishes onto the real MQTT command topic. It proves the
+# broker round trip without putting broker credentials in GitHub/Aurora jobs.
 marker = '  registerFirmwareMetadataRoutes(server);\n'
 if 'PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT' not in s:
     test_route = r'''#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
