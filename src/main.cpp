@@ -20,6 +20,7 @@
 #include "firmware_metadata.h"
 #include "update_service.h"
 #include "remote_update_service.h"
+#include "update_policy.h"
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -163,6 +164,7 @@ String statusJson() {
   json += "\"firmware\":" + firmwareVersionJson() + ",";
   json += "\"update\":" + FirmwareUpdate::statusJson() + ",";
   json += "\"remote_update\":" + RemoteFirmwareUpdate::statusJson() + ",";
+  json += "\"update_policy\":" + FirmwareUpdatePolicy::statusJson() + ",";
   json += "\"state\":\"" + String(stateName(appState)) + "\",";
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
@@ -196,14 +198,24 @@ void mqttMessageReceived(char* topic, byte* payload, unsigned int length) {
   if (payloadString == "firmware.status") {
     String response = "{\"event\":\"firmware_status\",\"update\":" +
                       FirmwareUpdate::statusJson() + ",\"remote_update\":" +
-                      RemoteFirmwareUpdate::statusJson() + "}";
+                      RemoteFirmwareUpdate::statusJson() + ",\"update_policy\":" +
+                      FirmwareUpdatePolicy::statusJson() + "}";
     mqttClient.publish(topicEvents.c_str(), response.c_str());
     return;
   }
 
   if (payloadString == "firmware.check") {
-    mqttClient.publish(topicEvents.c_str(),
-                       "{\"event\":\"firmware_check_rejected\",\"error\":\"manifest_url_required\"}");
+    String manifestUrl;
+    String error;
+    bool accepted = FirmwareUpdatePolicy::configuredManifestUrl(manifestUrl, error);
+    if (accepted) {
+      accepted = RemoteFirmwareUpdate::requestCheck(manifestUrl, error);
+    }
+    String response = accepted
+        ? String("{\"event\":\"firmware_check_requested\",\"accepted\":true,\"source\":\"policy\"}")
+        : String("{\"event\":\"firmware_check_requested\",\"accepted\":false,\"source\":\"policy\",\"error\":\"") +
+              error + "\"}";
+    mqttClient.publish(topicEvents.c_str(), response.c_str());
     return;
   }
 
@@ -332,6 +344,7 @@ void startNetworkServices() {
     body += "version=/api/version\n";
     body += "update=/update\n";
     body += "remote_update_status=/api/update/remote/status\n";
+    body += "update_policy=/api/update/policy\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
@@ -408,6 +421,7 @@ void startNetworkServices() {
   registerFirmwareMetadataRoutes(server);
   FirmwareUpdate::registerRoutes(server);
   RemoteFirmwareUpdate::registerRoutes(server);
+  FirmwareUpdatePolicy::registerRoutes(server);
 
   WebSerial.begin(&server);
   WebSerial.onMessage(handleWebCommand);
@@ -457,6 +471,9 @@ void setup() {
   loadMqttConfig();
   FirmwareUpdate::begin(preferencesReady);
   RemoteFirmwareUpdate::begin();
+  if (!FirmwareUpdatePolicy::begin()) {
+    Serial.println("UPDATE_POLICY_NVS_INIT_FAILED");
+  }
 
   WiFi.mode(WIFI_STA);
   deviceId = buildDeviceId();

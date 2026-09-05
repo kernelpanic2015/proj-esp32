@@ -2,6 +2,7 @@
 
 #include "firmware_package_verifier.h"
 #include "update_service.h"
+#include "update_policy.h"
 
 #include <ESPAsyncWebServer.h>
 #include <HTTPClient.h>
@@ -186,12 +187,15 @@ bool fetchSignatureBase64(const String& url, String& output, String& error) {
 }
 
 void setFailed(const String& error) {
-  StateLock lock;
-  if (lock.locked()) {
-    lastError = error;
-    remoteState = RemoteState::FAILED;
-    workerTask = nullptr;
+  {
+    StateLock lock;
+    if (lock.locked()) {
+      lastError = error;
+      remoteState = RemoteState::FAILED;
+      workerTask = nullptr;
+    }
   }
+  FirmwareUpdatePolicy::recordResult(error);
 }
 
 void finishWorker(RemoteState state) {
@@ -257,6 +261,7 @@ void checkWorker(void*) {
       workerTask = nullptr;
     }
   }
+  FirmwareUpdatePolicy::recordResult("available");
   vTaskDelete(nullptr);
 }
 
@@ -361,6 +366,7 @@ void applyWorker(void*) {
     return;
   }
 
+  FirmwareUpdatePolicy::recordResult("install_pending_reboot");
   finishWorker(RemoteState::IDLE);
   vTaskDelete(nullptr);
 }
