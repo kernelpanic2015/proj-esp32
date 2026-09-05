@@ -160,6 +160,8 @@ String statusJson() {
   String json = "{";
   json += "\"device\":\"" + deviceId + "\",";
   json += "\"hostname\":\"" + String(ProjectConfig::DEVICE_HOSTNAME) + "\",";
+  json += "\"firmware\":" + firmwareVersionJson() + ",";
+  json += "\"update\":" + FirmwareUpdate::statusJson() + ",";
   json += "\"state\":\"" + String(stateName(appState)) + "\",";
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
@@ -183,7 +185,8 @@ void mqttMessageReceived(char* topic, byte* payload, unsigned int length) {
 
   logLine("MQTT RX " + topicString + " => " + payloadString);
 
-  if (payloadString == "ping" || payloadString == "status") {
+  if (payloadString == "ping" || payloadString == "status" ||
+      payloadString == "firmware.status") {
     String response = statusJson();
     mqttClient.publish(topicEvents.c_str(), response.c_str());
   } else if (payloadString == "reboot") {
@@ -283,6 +286,8 @@ void startNetworkServices() {
     String body = "proj-esp32\n";
     body += "state=" + String(stateName(appState)) + "\n";
     body += "status=/api/status\n";
+    body += "version=/api/version\n";
+    body += "update=/update\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
