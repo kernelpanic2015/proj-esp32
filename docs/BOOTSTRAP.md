@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after Stage 6E / Stage 6 core runtime closure:
+Current physical device state after Stage 7A transactional configuration closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.25`
-- build: `26`
+- firmware: `0.1.29`
+- build: `30`
 - channel: `dev`
 - running partition: `app0`
 - boot partition: `app0`
@@ -67,9 +67,23 @@ Current physical device state after Stage 6E / Stage 6 core runtime closure:
 
 `arkhipenko/TaskScheduler` 4.0.8 runs alongside `jonblack/arduino-fsm`: TaskScheduler owns timing/eligibility; FSMs own state/behavior; components own subsystem interpretation; EventBus owns transition delivery; Supervisor aggregates registry health only.
 
-Stage 6E physically proved a full Wi-Fi loss and recovery. The reconnect work task ran only while needed, Wi-Fi and MQTT recovered, local runtime health returned to `ONLINE/OK` and `RUNNING/OK`, and telemetry resumed. The same proof found a 2199-byte status payload exceeding the old 2048-byte MQTT buffer; the explicit 4096-byte buffer corrected the regression and >2 KiB scheduled telemetry was physically published.
+Stage 6E physically proved a full Wi-Fi loss and recovery. Stage 7A then physically proved dual-slot transactional configuration, invalid-candidate rejection, reboot persistence, monotonic rollback and persistence across signed A/B OTA. The current ConfigurationStore document is revision 3 and remains local-NVS backed.
 
 Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 70% flash usage.
+
+## Stage 7A ConfigurationStore — validated
+
+- NVS namespace: `app-config`;
+- two verified slots plus active pointer;
+- schema 1, monotonic revision;
+- current proven revision: `3`;
+- invalid duplicate-ID candidate rejected without changing active configuration;
+- valid apply survived reboot;
+- second apply + explicit rollback restored previous logical document as new revision;
+- rolled-back revision survived reboot and clean signed OTA;
+- clean physical baseline: `0.1.29/build 30`, `app0/VALID`.
+
+Stage 7B should start with virtual input/output and minimal rule semantics; do not connect RuleEngine directly to GPIO.
 
 ## Flash layout — validated
 
@@ -96,6 +110,8 @@ The partition CSV uses the ESP32 data subtype name `spiffs` for the 512 KiB file
 3. double reset -> `FSM -> CONFIG_PORTAL`.
 
 The DRD object is constructed inside `setup()` after runtime/NVS initialization; constructing it globally previously caused an EEPROM/NVS initialization error.
+
+All intentional firmware restarts now go through `RestartService`. Its pre-restart hook calls `drd->stop()` before `ESP.restart()`, so a software-controlled reboot does not count toward human double-reset recovery. This was physically proven with two software reboots inside the 10 s DRD window. Manual/hardware reset pulses still retain the recovery behavior above.
 
 WiFiManager runs the config portal in nonblocking mode. Recovery/config AP:
 

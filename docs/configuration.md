@@ -57,3 +57,27 @@ These routes manage a local NVS store; HTTP availability is not required for con
 ## TaskScheduler + FSM rule for Stage 7
 
 Configuration persistence itself is synchronous and short. Periodic rule evaluation, delayed actions, settling windows, retries and schedules will use TaskScheduler. FSMs remain owners of state/behavior. Tasks should be disabled while their work is not meaningful.
+
+## Stage 7A physical validation
+
+Stage 7A was proven on the physical ESP32 with the signed A/B update path:
+
+```text
+rev0 defaults
+  -> apply valid config A -> rev1
+  -> reject duplicate-id candidate (HTTP 400), rev1 remains active
+  -> reboot -> rev1 loaded
+  -> apply valid config B -> rev2
+  -> rollback -> logical config A restored as monotonic rev3
+  -> reboot -> rev3 loaded
+  -> signed clean OTA -> 0.1.29/build30 app0 PENDING_VERIFY -> VALID
+  -> rev3 still loaded
+```
+
+The active document after rollback contained `demo.rule` disabled with the first logical payload, while `previous_revision=2`. Wi-Fi, MQTT/TLS, Supervisor and EventBus remained healthy and the clean image exposed no lab-only endpoint.
+
+### Intentional restart versus DoubleResetDetector
+
+The proof exposed a real interaction between controlled software reboots and DRD. The project uses a 10 s double-reset detection window and a 180 s configuration portal. A second software reboot issued inside the DRD window could therefore be mistaken for human recovery intent.
+
+Intentional firmware restarts now use `RestartService::restartNow()`. A registered hook calls `drd->stop()` before `ESP.restart()`, clearing the DRD marker only for software-controlled restart paths. Two deliberate software reboots inside the 10 s window were physically proven to return ONLINE promptly. Hardware/manual reset behavior remains unchanged and still supports double-reset recovery.

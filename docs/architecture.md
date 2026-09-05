@@ -340,3 +340,16 @@ The Stage 6 runtime pattern is now established: **TaskScheduler owns when work i
 `ConfigurationStore` is the durable boundary for local automation configuration. It uses two NVS slots plus a one-byte active pointer. A candidate is validated, written to the inactive slot, read back, validated again and only then activated. The old slot remains the rollback source. Rollback creates a new monotonic revision containing the previous payload.
 
 The store is intentionally not the RuleEngine. Stage 7A only guarantees persistence, structural validation, revisioning and recovery. RuleEngine/Scheduler will consume snapshots and add semantic validation/execution under the established TaskScheduler + FSM ownership model.
+
+
+## Stage 7A — transactional local configuration
+
+`ConfigurationStore` is the local control-plane persistence boundary. It uses two NVS slots and activates only a candidate that has parsed, validated, persisted and read back successfully. Rule and schedule envelopes are stored here, but Stage 7A deliberately does not execute their semantics.
+
+The physical proof established `apply -> reboot -> apply -> rollback -> reboot -> signed OTA` while preserving the selected logical document and monotonic revision. Connectivity is irrelevant to future execution: accepted local configuration remains in internal NVS.
+
+### Intentional restart boundary
+
+`RestartService` owns software-controlled restart. The service invokes a registered pre-restart hook; on this board the hook calls `DoubleResetDetector::stop()` so intentional reboot does not mimic a human double-reset. Hardware/manual resets are untouched. This keeps recovery semantics separate from update, MQTT, WebSerial and future local-control code.
+
+Stage 7B builds above this store with virtual components first. RuleEngine produces desired state only; actuator/component FSMs own interlocks and eventual hardware drivers.

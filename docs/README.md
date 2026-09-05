@@ -53,7 +53,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] MQTT reconnect + telemetry timing migrated to TaskScheduler and physically proven
 - [x] Wi-Fi reconnect timing migrated to TaskScheduler and physically proven
 - [x] add Supervisor FSM over the common component health model and physically prove `RUNNING -> DEGRADED -> RUNNING`
-- [~] Stage 7A transactional ConfigurationStore implementation/build validation
+- [x] Stage 7A transactional ConfigurationStore: apply/reject/reboot/rollback/OTA persistence physically validated
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -63,13 +63,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after Stage 6E closure:
+Validated directly on the physical device on 2026-09-05 after Stage 7A closure:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.25`, build `26`, channel `dev`
+- firmware: `0.1.29`, build `30`, channel `dev`
 - running OTA partition: `app0`
 - boot partition: `app0`
 - next update partition: `app1`
@@ -86,7 +86,7 @@ Validated directly on the physical device on 2026-09-05 after Stage 6E closure:
 - remote OTA policy: HTTPS-only
 - lab-only Wi-Fi/MQTT test endpoints: absent from the clean image
 
-Stage 6 core runtime is validated. TaskScheduler controls timing/eligibility, FSMs control state/behavior, EventBus carries transitions, components own subsystem health interpretation and Supervisor aggregates health. Further migrations remain incremental and should happen only when they improve the implementation. **Stage 7 — persistent configuration and local RuleEngine — is next.**
+Stage 6 core runtime is validated and Stage 7A transactional configuration is physically validated. Configuration revision 3 survived reboot, rollback and signed OTA. Intentional software restart now clears the DRD marker before reboot so it cannot masquerade as a human double-reset request. **Stage 7B — the smallest virtual-input/virtual-output local rule model — is next.**
 
 ## OTA partition layout
 

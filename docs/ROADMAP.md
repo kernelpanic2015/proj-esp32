@@ -177,19 +177,25 @@ Stage 6 core is therefore validated. Future subsystems should continue adopting 
 
 Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 
-## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7A]
+## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7B]
 
 Implement versioned, validated, transactional configuration with rollback to previous configuration.
 
 Core services:
 
 - [x] **Stage 7A foundation** — dual-slot transactional NVS `ConfigurationStore`, monotonic revision, verified inactive-slot write, boot fallback and rollback API;
-- [ ] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
+- [x] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
 - [ ] `RuleEngine` with semantic rule validation and TaskScheduler-driven evaluation;
 - [ ] local `Scheduler` for schedules/delayed actions/settling windows;
 - [ ] dependency/fault policies for actuators.
 
 Stage 7A stores rule/schedule envelopes but does not execute them yet. Rule semantics become active only after the RuleEngine validator/evaluator is introduced.
+
+**Stage 7A: VALIDATED on hardware.** The dual-slot NVS store proved valid apply, invalid-candidate rejection without active-state replacement, reboot persistence, a second valid apply, rollback with monotonic revision, persistence of the rolled-back logical document, and survival across signed A/B OTA. Clean baseline `0.1.29/build 30` is `app0/VALID`, Wi-Fi + MQTT/TLS connected, Supervisor `RUNNING/OK`, EventBus `dropped=0`.
+
+The proof also exposed a recovery interaction: two intentional software reboots inside the 10 s DoubleResetDetector window could open the 180 s WiFiManager config portal. All intentional firmware restart paths now go through `RestartService`, which calls `drd->stop()` before `ESP.restart()`. Two software reboots inside the DRD window were then physically proven to return ONLINE promptly; manual/hardware resets still retain normal double-reset recovery behavior.
+
+**Stage 7B next:** introduce the smallest useful local rule model with virtual input/output components. Do not access GPIO from RuleEngine.
 
 A configured rule such as `heater ON below 16 C / OFF above 18 C` must continue operating with all external connectivity removed.
 

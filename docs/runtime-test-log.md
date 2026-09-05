@@ -133,3 +133,18 @@ Implementation checkpoint:
 - Clean target `0.1.25/build 26` installed on `app0`, completed `PENDING_VERIFY -> VALID`, returned `ONLINE` with Wi-Fi + MQTT/TLS, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, and the lab-only Wi-Fi disconnect endpoint returned HTTP 404.
 
 **Stage 6E: VALIDATED. Stage 6 core runtime: VALIDATED. Stage 7 is next.**
+
+
+## 2026-09-05 — Stage 7A transactional ConfigurationStore
+
+- Added dual-slot NVS `ConfigurationStore` with verified inactive-slot writes and a one-byte active pointer.
+- Configuration revision is device-monotonic; rollback restores previous logical content as a new revision rather than moving revision backward.
+- Valid config A became revision 1 and survived reboot.
+- A duplicate-ID candidate was rejected with `configuration_entry_id_duplicate`; active revision/content remained unchanged.
+- Valid config B became revision 2. Explicit rollback restored config A as revision 3.
+- Revision 3 persisted across reboot and across signed A/B OTA.
+- Clean target `0.1.29/build 30` completed `PENDING_VERIFY -> VALID` on `app0`; configuration remained revision 3, Wi-Fi and MQTT/TLS were connected, Supervisor was `RUNNING/OK`, and EventBus remained `dropped=0`.
+- A second controlled reboot during the original proof triggered the DRD recovery window and 180 s WiFiManager portal. This was diagnosed rather than treated as ConfigurationStore failure.
+- Added `RestartService`: intentional software reboot paths call `drd->stop()` before restart. Two deliberate software reboots inside the 10 s DRD window then recovered promptly without entering the configuration portal.
+
+**Stage 7A: VALIDATED. Stage 7B is next.**
