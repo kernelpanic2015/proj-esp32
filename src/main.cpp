@@ -64,6 +64,12 @@ bool runtimeMqttConnected();
 bool runtimeMqttConfigured();
 void sampleConnectivityComponent();
 void evaluateRuntimeSupervisor();
+void coordinateWifiTasks();
+void runWifiReconnectTask();
+String wifiRuntimeStatusJson();
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+void runWifiTestDisconnectTask();
+#endif
 void coordinateMqttTasks();
 void runMqttReconnectTask();
 void runMqttTelemetryTask();
@@ -75,6 +81,14 @@ Task connectivityHealthTask(2000, TASK_FOREVER, sampleConnectivityComponent,
                             &cooperativeScheduler, false);
 Task supervisorTask(1000, TASK_FOREVER, evaluateRuntimeSupervisor,
                     &cooperativeScheduler, false);
+Task wifiCoordinatorTask(250, TASK_FOREVER, coordinateWifiTasks,
+                         &cooperativeScheduler, false);
+Task wifiReconnectTask(ProjectConfig::WIFI_RECONNECT_INTERVAL_MS, TASK_FOREVER,
+                       runWifiReconnectTask, &cooperativeScheduler, false);
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+Task wifiTestDisconnectTask(250, TASK_ONCE, runWifiTestDisconnectTask,
+                            &cooperativeScheduler, false);
+#endif
 Task mqttCoordinatorTask(250, TASK_FOREVER, coordinateMqttTasks,
                          &cooperativeScheduler, false);
 Task mqttReconnectTask(ProjectConfig::MQTT_RECONNECT_INTERVAL_MS, TASK_FOREVER,
@@ -98,7 +112,18 @@ uint16_t mqttPort = 1883;
 String mqttUsername;
 String mqttPassword;
 bool mqttTls = false;
-unsigned long lastWifiRetry = 0;
+uint32_t wifiReconnectAttemptCount = 0;
+uint32_t wifiReconnectSuccessCount = 0;
+uint32_t wifiDisconnectObservedCount = 0;
+unsigned long wifiLastReconnectAttemptMs = 0;
+unsigned long wifiLastReconnectSuccessMs = 0;
+unsigned long wifiLastDisconnectObservedMs = 0;
+String wifiLastReconnectResult = "never";
+bool wifiReconnectPending = false;
+bool wifiLastObservedConnected = false;
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+unsigned long wifiReconnectSuppressedUntil = 0;
+#endif
 uint32_t mqttReconnectAttemptCount = 0;
 uint32_t mqttReconnectSuccessCount = 0;
 uint32_t mqttTelemetryAttemptCount = 0;
@@ -282,6 +307,7 @@ String statusJson() {
   json += "\"wifi\":" + String(WiFi.status() == WL_CONNECTED ? "true" : "false") + ",";
   json += "\"ip\":\"" + WiFi.localIP().toString() + "\",";
   json += "\"rssi\":" + String(WiFi.status() == WL_CONNECTED ? WiFi.RSSI() : 0) + ",";
+  json += "\"wifi_runtime\":" + wifiRuntimeStatusJson() + ",";
   json += "\"mqtt\":" + String(mqttClient.connected() ? "true" : "false") + ",";
   json += "\"mqtt_configured\":" + String(mqttConfigured() ? "true" : "false") + ",";
   json += "\"mqtt_tls\":" + String(mqttTls ? "true" : "false") + ",";
@@ -389,6 +415,101 @@ bool connectMqtt() {
   logLine("MQTT/PubSubClient connected; subscribed to " + topicCommand);
   return true;
 }
+
+
+bool wifiReconnectAllowedNow() {
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+  return static_cast<int32_t>(millis() - wifiReconnectSuppressedUntil) >= 0;
+#else
+  return true;
+#endif
+}
+
+void runWifiReconnectTask() {
+  if (wifiManager.getConfigPortalActive() || WiFi.status() == WL_CONNECTED ||
+      !wifiReconnectAllowedNow()) {
+    wifiLastReconnectResult = wifiManager.getConfigPortalActive() ? "portal_active" :
+                              (WiFi.status() == WL_CONNECTED ? "already_connected" : "suppressed");
+    wifiReconnectTask.disable();
+    return;
+  }
+
+  ++wifiReconnectAttemptCount;
+  wifiLastReconnectAttemptMs = millis();
+  wifiReconnectPending = true;
+  const bool started = WiFi.reconnect();
+  wifiLastReconnectResult = started ? "reconnect_started" : "reconnect_start_failed";
+}
+
+void coordinateWifiTasks() {
+  const bool portalActive = wifiManager.getConfigPortalActive();
+  const bool wifiUp = WiFi.status() == WL_CONNECTED;
+
+  if (portalActive) {
+    if (wifiReconnectTask.isEnabled()) wifiReconnectTask.disable();
+    wifiReconnectPending = false;
+    wifiLastReconnectResult = "portal_active";
+    wifiLastObservedConnected = wifiUp;
+    return;
+  }
+
+  if (wifiUp) {
+    if (!wifiLastObservedConnected && wifiReconnectPending) {
+      ++wifiReconnectSuccessCount;
+      wifiLastReconnectSuccessMs = millis();
+      wifiLastReconnectResult = "connected";
+    }
+    wifiReconnectPending = false;
+    wifiLastObservedConnected = true;
+    if (wifiReconnectTask.isEnabled()) wifiReconnectTask.disable();
+    if (appState == AppState::OFFLINE || appState == AppState::WIFI_CONNECTING) {
+      machine.trigger(EVT_WIFI_UP);
+    }
+    return;
+  }
+
+  if (wifiLastObservedConnected) {
+    ++wifiDisconnectObservedCount;
+    wifiLastDisconnectObservedMs = millis();
+  }
+  wifiLastObservedConnected = false;
+
+  if (appState == AppState::WIFI_CONNECTING || appState == AppState::ONLINE) {
+    machine.trigger(EVT_WIFI_DOWN);
+  }
+
+  if (!wifiReconnectAllowedNow()) {
+    if (wifiReconnectTask.isEnabled()) wifiReconnectTask.disable();
+    wifiLastReconnectResult = "suppressed";
+    return;
+  }
+
+  if (!wifiReconnectTask.isEnabled()) {
+    wifiReconnectTask.enable();
+    wifiReconnectTask.forceNextIteration();
+  }
+}
+
+String wifiRuntimeStatusJson() {
+  String json = "{";
+  json += "\"coordinator_task_enabled\":" + String(wifiCoordinatorTask.isEnabled() ? "true" : "false") + ",";
+  json += "\"reconnect_task_enabled\":" + String(wifiReconnectTask.isEnabled() ? "true" : "false") + ",";
+  json += "\"reconnect_attempt_count\":" + String(wifiReconnectAttemptCount) + ",";
+  json += "\"reconnect_success_count\":" + String(wifiReconnectSuccessCount) + ",";
+  json += "\"disconnect_observed_count\":" + String(wifiDisconnectObservedCount) + ",";
+  json += "\"last_reconnect_attempt_ms\":" + String(wifiLastReconnectAttemptMs) + ",";
+  json += "\"last_reconnect_success_ms\":" + String(wifiLastReconnectSuccessMs) + ",";
+  json += "\"last_disconnect_observed_ms\":" + String(wifiLastDisconnectObservedMs) + ",";
+  json += "\"last_reconnect_result\":\"" + wifiLastReconnectResult + "\"";
+  json += "}";
+  return json;
+}
+
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+void runWifiTestDisconnectTask() {
+  WiFi.disconnect(false, false);
+}
+#endif
 
 
 bool mqttReconnectAllowedNow() {
@@ -569,6 +690,7 @@ void startNetworkServices() {
     body += "update_scheduler=/api/update/scheduler\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
+    body += "wifi_runtime=/api/wifi/runtime\n";
     body += "mqtt_runtime=/api/mqtt/runtime\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
@@ -585,6 +707,10 @@ void startNetworkServices() {
 
   server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", runtimeSupervisor.statusJson());
+  });
+
+  server.on("/api/wifi/runtime", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", wifiRuntimeStatusJson());
   });
 
   server.on("/api/mqtt/runtime", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -660,6 +786,13 @@ void startNetworkServices() {
     request->send(202, "application/json",
                   "{\"accepted\":true,\"reconnect_suppressed_ms\":8000}");
   });
+
+  server.on("/api/test/wifi/disconnect", HTTP_POST, [](AsyncWebServerRequest* request) {
+    wifiReconnectSuppressedUntil = millis() + 8000UL;
+    wifiTestDisconnectTask.restartDelayed(250);
+    request->send(202, "application/json",
+                  "{\"accepted\":true,\"disconnect_delay_ms\":250,\"reconnect_suppressed_ms\":8000}");
+  });
 #endif
 
   registerFirmwareMetadataRoutes(server);
@@ -723,6 +856,7 @@ void setup() {
   runtimeSupervisor.begin();
   connectivityHealthTask.enableDelayed(2000);
   supervisorTask.enableDelayed(1000);
+  wifiCoordinatorTask.enableDelayed(250);
   mqttCoordinatorTask.enableDelayed(250);
 
   FirmwareUpdate::begin(preferencesReady);
@@ -811,22 +945,10 @@ void loop() {
   const bool wifiUp = WiFi.status() == WL_CONNECTED;
 
   if (!wifiUp) {
-    if (appState == AppState::WIFI_CONNECTING) {
-      machine.trigger(EVT_WIFI_DOWN);
-    } else if (appState == AppState::ONLINE) {
-      machine.trigger(EVT_WIFI_DOWN);
-    }
-
-    if (millis() - lastWifiRetry >= ProjectConfig::MQTT_RECONNECT_INTERVAL_MS) {
-      lastWifiRetry = millis();
-      WiFi.reconnect();
-    }
-    delay(5);
+    // Wi-Fi retry eligibility/cadence and ONLINE/OFFLINE FSM transitions are
+    // coordinated by TaskScheduler. The loop remains available to local work.
+    delay(2);
     return;
-  }
-
-  if (appState == AppState::OFFLINE || appState == AppState::WIFI_CONNECTING) {
-    machine.trigger(EVT_WIFI_UP);
   }
 
   startNetworkServices();

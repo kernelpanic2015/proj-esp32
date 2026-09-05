@@ -149,7 +149,7 @@ The ESP32 fetches the signed manifest and firmware directly over HTTPS.
 
 Automatic policy compares remote and local monotonic build numbers at a configured interval. A failed update does not disable normal local control.
 
-## Stage 6 — Core modular runtime [in progress — Stage 6D validated]
+## Stage 6 — Core modular runtime [in progress — Stage 6D validated, Stage 6E in progress]
 
 Introduce:
 

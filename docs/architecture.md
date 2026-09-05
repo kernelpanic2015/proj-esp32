@@ -314,3 +314,8 @@ Stage 6D is physically validated. `lastMqttAttempt` and `lastHeartbeat` are gone
 The controlled proof showed `ONLINE/OK -> WIFI_ONLY/DEGRADED -> ONLINE/OK` for connectivity and `RUNNING/OK -> DEGRADED -> RUNNING/OK` for Supervisor during a real MQTT interruption, while the application FSM remained `ONLINE`. Reconnect counters advanced through the TaskScheduler path and telemetry publishing resumed after its delayed interval. The clean `0.1.22/build 23` image is the promoted baseline.
 
 `PubSubClient::loop()` intentionally remains a fast cooperative call in the main loop; Stage 6D migrated timing/eligibility without changing the proven transport implementation. Future migration should only move additional work when it improves the common TaskScheduler + FSM pattern without destabilizing local control.
+
+
+### Stage 6E Wi-Fi scheduling migration
+
+Wi-Fi reconnect timing is the next incremental migration to the common cooperative runtime. A lightweight coordinator observes Wi-Fi/config-portal eligibility; the actual reconnect task remains disabled while there is no meaningful work. On connection loss, the coordinator drives the existing application FSM to `OFFLINE` and enables the reconnect task; on recovery it drives `EVT_WIFI_UP` and disables reconnect work again. This removes another hand-written `millis()` retry timer without changing local-autonomy semantics.

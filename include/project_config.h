@@ -13,6 +13,7 @@ constexpr uint16_t CONFIG_PORTAL_TIMEOUT_SECONDS = 180;
 constexpr char MQTT_HOST[] = "kpnote.local";
 constexpr uint16_t MQTT_PORT = 1883;
 constexpr char MQTT_TOPIC_ROOT[] = "lab/proj-esp32";
+constexpr uint32_t WIFI_RECONNECT_INTERVAL_MS = 5000;
 constexpr uint32_t MQTT_RECONNECT_INTERVAL_MS = 5000;
 constexpr uint32_t HEARTBEAT_INTERVAL_MS = 10000;
 

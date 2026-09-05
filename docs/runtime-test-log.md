@@ -98,3 +98,15 @@ Implementation checkpoint:
 - The first proof wrapper stopped after the degradation assertion despite the device recovering; a focused continuation repeated the real disconnect/recovery assertions and ended `STAGE6D_PHYSICAL_PROOF_OK`.
 
 **Stage 6D: VALIDATED.**
+
+
+## 2026-09-05 — Stage 6E Wi-Fi scheduler migration
+
+Implementation checkpoint:
+
+- remove `lastWifiRetry` / main-loop `millis()` retry timing;
+- add TaskScheduler Wi-Fi coordinator + reconnect task;
+- reconnect task disabled while Wi-Fi is healthy, config portal is active, or a controlled lab suppression is active;
+- preserve existing application FSM semantics (`ONLINE <-> OFFLINE`) rather than inventing a second state owner;
+- expose `/api/wifi/runtime` counters and task enable state;
+- physical proof pending: signed lab image, controlled Wi-Fi disconnect, observed reconnect attempt/success, connectivity/Supervisor recovery, clean target image.
