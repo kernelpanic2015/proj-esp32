@@ -283,3 +283,25 @@ Stage 6C proof-note: the first signed lab image physically validated Supervisor 
 Stage 6C is physically validated. A real MQTT disconnect with Wi-Fi/HTTP preserved caused `connectivity=ONLINE/OK -> WIFI_ONLY/DEGRADED` (`mqtt_disconnected`) and Supervisor `RUNNING/OK -> DEGRADED`. After reconnect both recovered to `ONLINE/OK` and `RUNNING/OK`; EventBus dropped count stayed zero. A clean `0.1.20/build 21` image was then installed on `app1`, reached `VALID`, and did not expose the test-only disconnect endpoint.
 
 This validates the ownership boundary: Supervisor observes aggregate health but does not own transport recovery or local functional control. Stage 6D may migrate MQTT reconnect and telemetry timing to TaskScheduler without changing this contract.
+
+
+## MQTT TaskScheduler migration (Stage 6D)
+
+Stage 6D removes the hand-written `lastMqttAttempt` and `lastHeartbeat` timers from the main loop. Three cooperative tasks now separate eligibility from work:
+
+```text
+mqttCoordinatorTask (250 ms, lightweight)
+    |-- disconnected + eligible -> enable/force mqttReconnectTask
+    |-- connected -> disable reconnect, delayed-enable telemetry
+    `-- unavailable/portal/not configured -> disable both work tasks
+
+mqttReconnectTask (5 s retry interval)
+    `-- attempts the existing MQTT connect operation, disables itself on success
+
+mqttTelemetryTask (10 s periodic)
+    `-- publishes the existing shared status document only while connected
+```
+
+The important platform rule is preserved: work tasks remain disabled when their work is meaningless. `PubSubClient::loop()` remains a fast per-loop cooperative service call for now; Stage 6D changes timing/eligibility, not the proven transport implementation. The synchronous `PubSubClient::connect()` body is intentionally unchanged in this migration and can be hardened separately if connection latency later becomes a scheduling problem.
+
+`GET /api/mqtt/runtime` exposes scheduler/counter state without credentials so reconnect and telemetry cadence can be physically validated.

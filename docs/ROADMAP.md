@@ -165,7 +165,7 @@ Introduce:
 - [x] route component state/health transitions through the bounded `EventBus`;
 - [x] `Supervisor` FSM implementation: TaskScheduler-driven health aggregation over ComponentRegistry with RUNNING/DEGRADED/FAULT states;
 - [x] physical proof of Supervisor `RUNNING -> DEGRADED -> RUNNING` through a controlled real MQTT transport interruption;
-- [ ] **Stage 6D** — migrate additional periodic/retry work to TaskScheduler where it improves consistency, starting with MQTT reconnect and telemetry without changing network behavior.
+- [~] **Stage 6D** — MQTT reconnect eligibility/retry cadence and periodic telemetry heartbeat migrated to TaskScheduler; physical disconnect/reconnect + telemetry proof pending.
 
 Rule: drivers know hardware; components know behavior; services know communication; supervisor knows only state/health.
 

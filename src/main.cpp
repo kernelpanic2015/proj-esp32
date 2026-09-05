@@ -64,6 +64,10 @@ bool runtimeMqttConnected();
 bool runtimeMqttConfigured();
 void sampleConnectivityComponent();
 void evaluateRuntimeSupervisor();
+void coordinateMqttTasks();
+void runMqttReconnectTask();
+void runMqttTelemetryTask();
+String mqttRuntimeStatusJson();
 
 Components::ConnectivityComponent connectivityComponent(
     runtimeEvents, runtimeWifiConnected, runtimeMqttConnected, runtimeMqttConfigured);
@@ -71,6 +75,12 @@ Task connectivityHealthTask(2000, TASK_FOREVER, sampleConnectivityComponent,
                             &cooperativeScheduler, false);
 Task supervisorTask(1000, TASK_FOREVER, evaluateRuntimeSupervisor,
                     &cooperativeScheduler, false);
+Task mqttCoordinatorTask(250, TASK_FOREVER, coordinateMqttTasks,
+                         &cooperativeScheduler, false);
+Task mqttReconnectTask(ProjectConfig::MQTT_RECONNECT_INTERVAL_MS, TASK_FOREVER,
+                       runMqttReconnectTask, &cooperativeScheduler, false);
+Task mqttTelemetryTask(ProjectConfig::HEARTBEAT_INTERVAL_MS, TASK_FOREVER,
+                       runMqttTelemetryTask, &cooperativeScheduler, false);
 
 bool webStarted = false;
 bool networkServicesStarted = false;
@@ -88,9 +98,17 @@ uint16_t mqttPort = 1883;
 String mqttUsername;
 String mqttPassword;
 bool mqttTls = false;
-unsigned long lastMqttAttempt = 0;
-unsigned long lastHeartbeat = 0;
 unsigned long lastWifiRetry = 0;
+uint32_t mqttReconnectAttemptCount = 0;
+uint32_t mqttReconnectSuccessCount = 0;
+uint32_t mqttTelemetryAttemptCount = 0;
+uint32_t mqttTelemetryPublishCount = 0;
+unsigned long mqttLastReconnectAttemptMs = 0;
+unsigned long mqttLastReconnectSuccessMs = 0;
+unsigned long mqttLastTelemetryAttemptMs = 0;
+unsigned long mqttLastTelemetryPublishMs = 0;
+String mqttLastReconnectResult = "never";
+String mqttLastTelemetryResult = "never";
 #ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
 unsigned long mqttReconnectSuppressedUntil = 0;
 #endif
@@ -267,6 +285,7 @@ String statusJson() {
   json += "\"mqtt\":" + String(mqttClient.connected() ? "true" : "false") + ",";
   json += "\"mqtt_configured\":" + String(mqttConfigured() ? "true" : "false") + ",";
   json += "\"mqtt_tls\":" + String(mqttTls ? "true" : "false") + ",";
+  json += "\"mqtt_runtime\":" + mqttRuntimeStatusJson() + ",";
   json += "\"uptime_ms\":" + String(millis()) + ",";
   json += "\"free_heap\":" + String(ESP.getFreeHeap());
   json += "}";
@@ -356,7 +375,6 @@ bool connectMqtt() {
     return false;
   }
 
-  lastMqttAttempt = millis();
   String clientId = String(ProjectConfig::DEVICE_HOSTNAME) + "-" + deviceId;
   logLine("MQTT/PubSubClient connecting to " + mqttHost + ":" + String(mqttPort) +
           (mqttTls ? " TLS" : ""));
@@ -370,6 +388,114 @@ bool connectMqtt() {
   mqttClient.publish(topicState.c_str(), "{\"online\":true}", true);
   logLine("MQTT/PubSubClient connected; subscribed to " + topicCommand);
   return true;
+}
+
+
+bool mqttReconnectAllowedNow() {
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+  return static_cast<int32_t>(millis() - mqttReconnectSuppressedUntil) >= 0;
+#else
+  return true;
+#endif
+}
+
+void runMqttReconnectTask() {
+  if (WiFi.status() != WL_CONNECTED || wifiManager.getConfigPortalActive() ||
+      !networkServicesStarted || !mqttConfigured() || !mqttReconnectAllowedNow()) {
+    mqttLastReconnectResult = "not_eligible";
+    mqttReconnectTask.disable();
+    return;
+  }
+
+  if (mqttClient.connected()) {
+    mqttLastReconnectResult = "already_connected";
+    mqttReconnectTask.disable();
+    return;
+  }
+
+  ++mqttReconnectAttemptCount;
+  mqttLastReconnectAttemptMs = millis();
+  const bool connected = connectMqtt();
+  if (connected) {
+    ++mqttReconnectSuccessCount;
+    mqttLastReconnectSuccessMs = millis();
+    mqttLastReconnectResult = "connected";
+    mqttReconnectTask.disable();
+  } else {
+    mqttLastReconnectResult = "failed_retry_scheduled";
+  }
+}
+
+void runMqttTelemetryTask() {
+  if (!mqttClient.connected()) {
+    mqttLastTelemetryResult = "not_connected";
+    mqttTelemetryTask.disable();
+    return;
+  }
+
+  ++mqttTelemetryAttemptCount;
+  mqttLastTelemetryAttemptMs = millis();
+  const String telemetry = statusJson();
+  const bool published = mqttClient.publish(topicTelemetry.c_str(), telemetry.c_str());
+  if (published) {
+    ++mqttTelemetryPublishCount;
+    mqttLastTelemetryPublishMs = millis();
+    mqttLastTelemetryResult = "published";
+  } else {
+    mqttLastTelemetryResult = "publish_failed";
+  }
+}
+
+void coordinateMqttTasks() {
+  const bool eligible = networkServicesStarted &&
+                        WiFi.status() == WL_CONNECTED &&
+                        !wifiManager.getConfigPortalActive() && mqttConfigured();
+
+  if (!eligible) {
+    if (mqttReconnectTask.isEnabled()) mqttReconnectTask.disable();
+    if (mqttTelemetryTask.isEnabled()) mqttTelemetryTask.disable();
+    return;
+  }
+
+  if (mqttClient.connected()) {
+    if (mqttReconnectTask.isEnabled()) mqttReconnectTask.disable();
+    if (!mqttTelemetryTask.isEnabled()) {
+      mqttTelemetryTask.restartDelayed(ProjectConfig::HEARTBEAT_INTERVAL_MS);
+    }
+    return;
+  }
+
+  if (mqttTelemetryTask.isEnabled()) mqttTelemetryTask.disable();
+
+  if (!mqttReconnectAllowedNow()) {
+    if (mqttReconnectTask.isEnabled()) mqttReconnectTask.disable();
+    mqttLastReconnectResult = "suppressed";
+    return;
+  }
+
+  if (!mqttReconnectTask.isEnabled()) {
+    mqttReconnectTask.enable();
+    mqttReconnectTask.forceNextIteration();
+  }
+}
+
+String mqttRuntimeStatusJson() {
+  String json = "{";
+  json += "\"coordinator_task_enabled\":" + String(mqttCoordinatorTask.isEnabled() ? "true" : "false") + ",";
+  json += "\"reconnect_task_enabled\":" + String(mqttReconnectTask.isEnabled() ? "true" : "false") + ",";
+  json += "\"telemetry_task_enabled\":" + String(mqttTelemetryTask.isEnabled() ? "true" : "false") + ",";
+  json += "\"reconnect_attempt_count\":" + String(mqttReconnectAttemptCount) + ",";
+  json += "\"reconnect_success_count\":" + String(mqttReconnectSuccessCount) + ",";
+  json += "\"telemetry_attempt_count\":" + String(mqttTelemetryAttemptCount) + ",";
+  json += "\"telemetry_publish_count\":" + String(mqttTelemetryPublishCount) + ",";
+  json += "\"last_reconnect_attempt_ms\":" + String(mqttLastReconnectAttemptMs) + ",";
+  json += "\"last_reconnect_success_ms\":" + String(mqttLastReconnectSuccessMs) + ",";
+  json += "\"last_telemetry_attempt_ms\":" + String(mqttLastTelemetryAttemptMs) + ",";
+  json += "\"last_telemetry_publish_ms\":" + String(mqttLastTelemetryPublishMs) + ",";
+  json += "\"last_reconnect_result\":\"" + mqttLastReconnectResult + "\",";
+  json += "\"last_telemetry_result\":\"" + mqttLastTelemetryResult + "\"";
+  json += "}";
+  return json;
 }
 
 void handleWebCommand(uint8_t* data, size_t len) {
@@ -443,6 +569,7 @@ void startNetworkServices() {
     body += "update_scheduler=/api/update/scheduler\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
+    body += "mqtt_runtime=/api/mqtt/runtime\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
@@ -458,6 +585,10 @@ void startNetworkServices() {
 
   server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", runtimeSupervisor.statusJson());
+  });
+
+  server.on("/api/mqtt/runtime", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", mqttRuntimeStatusJson());
   });
 
   server.on("/config/mqtt", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -558,7 +689,7 @@ void startNetworkServices() {
   networkServicesStarted = true;
   logLine("HTTP server ready: http://" + WiFi.localIP().toString() + "/");
   logLine("WebSerial ready: http://" + WiFi.localIP().toString() + "/webserial");
-  connectMqtt();
+  mqttCoordinatorTask.forceNextIteration();
 }
 
 void configureStateMachine() {
@@ -592,6 +723,7 @@ void setup() {
   runtimeSupervisor.begin();
   connectivityHealthTask.enableDelayed(2000);
   supervisorTask.enableDelayed(1000);
+  mqttCoordinatorTask.enableDelayed(250);
 
   FirmwareUpdate::begin(preferencesReady);
   RemoteFirmwareUpdate::begin();
@@ -699,23 +831,9 @@ void loop() {
 
   startNetworkServices();
   WebSerial.loop();
+  // PubSubClient::loop() remains a fast cooperative service call. Stage 6D moves
+  // reconnect eligibility/backoff and periodic telemetry timing to TaskScheduler.
   mqttClient.loop();
-
-  bool mqttReconnectAllowed = true;
-#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
-  mqttReconnectAllowed = millis() >= mqttReconnectSuppressedUntil;
-#endif
-  if (mqttReconnectAllowed && !mqttClient.connected() && mqttConfigured() &&
-      millis() - lastMqttAttempt >= ProjectConfig::MQTT_RECONNECT_INTERVAL_MS) {
-    connectMqtt();
-  }
-
-  if (mqttClient.connected() &&
-      millis() - lastHeartbeat >= ProjectConfig::HEARTBEAT_INTERVAL_MS) {
-    lastHeartbeat = millis();
-    String telemetry = statusJson();
-    mqttClient.publish(topicTelemetry.c_str(), telemetry.c_str());
-  }
 
   delay(2);
 }

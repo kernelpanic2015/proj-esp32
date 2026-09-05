@@ -71,3 +71,16 @@ Physical acceptance still pending at this checkpoint: signed OTA into the contro
 - The proof wrapper issue was labelled failed after the script had already completed, but the captured assertions ended `STAGE6C_PHYSICAL_PROOF_OK`; closure is based on the physical assertions and final clean-device state.
 
 **Stage 6C: VALIDATED. Stage 6D is next.**
+
+
+## 2026-09-05 — Stage 6D MQTT scheduler migration
+
+Implementation checkpoint:
+
+- removed main-loop `millis()` timers for MQTT reconnect and heartbeat telemetry;
+- added TaskScheduler coordinator + reconnect + telemetry tasks;
+- reconnect work task is disabled while connected, unconfigured, offline, in config portal, or intentionally suppressed by a test-gated proof;
+- telemetry task is disabled while MQTT is disconnected and delayed by the configured heartbeat interval after connection;
+- existing `PubSubClient::loop()` and connection/publish semantics remain unchanged;
+- `/api/mqtt/runtime` exposes task enable state and reconnect/telemetry counters;
+- physical proof pending: signed lab image, real MQTT disconnect/recovery, telemetry counter progression, clean target image.
