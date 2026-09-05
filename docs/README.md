@@ -13,8 +13,9 @@ This directory is the canonical handoff for `proj-esp32`.
 7. [`mqtt.md`](mqtt.md) — validated RabbitMQ/CloudAMQP MQTT/TLS setup, topics and smoke-test procedure.
 8. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, serial observation and Git synchronization workflow.
 9. [`runtime-test-log.md`](runtime-test-log.md) — physical validation evidence for the TaskScheduler + FSM modular runtime migration.
-10. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
-11. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
+10. [`configuration.md`](configuration.md) — Stage 7 transactional NVS configuration model and local-control contract.
+11. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
+12. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
 
 ## Current milestones
 
@@ -52,6 +53,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] MQTT reconnect + telemetry timing migrated to TaskScheduler and physically proven
 - [x] Wi-Fi reconnect timing migrated to TaskScheduler and physically proven
 - [x] add Supervisor FSM over the common component health model and physically prove `RUNNING -> DEGRADED -> RUNNING`
+- [~] Stage 7A transactional ConfigurationStore implementation/build validation
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI

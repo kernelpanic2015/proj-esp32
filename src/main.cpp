@@ -23,6 +23,7 @@
 #include "remote_update_service.h"
 #include "update_policy.h"
 #include "update_scheduler.h"
+#include "configuration_store.h"
 #include "core/component_registry.h"
 #include "core/event_bus.h"
 #include "core/runtime_events.h"
@@ -300,6 +301,7 @@ String statusJson() {
   json += "\"remote_update\":" + RemoteFirmwareUpdate::statusJson() + ",";
   json += "\"update_policy\":" + FirmwareUpdatePolicy::statusJson() + ",";
   json += "\"update_scheduler\":" + FirmwareUpdateScheduler::statusJson() + ",";
+  json += "\"configuration\":" + ConfigurationStore::statusJson() + ",";
   json += "\"components\":" + runtimeComponents.statusJson() + ",";
   json += "\"supervisor\":" + runtimeSupervisor.statusJson() + ",";
   json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
@@ -688,6 +690,8 @@ void startNetworkServices() {
     body += "remote_update_status=/api/update/remote/status\n";
     body += "update_policy=/api/update/policy\n";
     body += "update_scheduler=/api/update/scheduler\n";
+    body += "configuration=/api/configuration\n";
+    body += "configuration_status=/api/configuration/status\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
     body += "wifi_runtime=/api/wifi/runtime\n";
@@ -800,6 +804,7 @@ void startNetworkServices() {
   RemoteFirmwareUpdate::registerRoutes(server);
   FirmwareUpdatePolicy::registerRoutes(server);
   FirmwareUpdateScheduler::registerRoutes(server);
+  ConfigurationStore::registerRoutes(server);
 
   WebSerial.begin(&server);
   WebSerial.onMessage(handleWebCommand);
@@ -847,6 +852,9 @@ void setup() {
 
   preferencesReady = preferences.begin("proj-esp32", false);
   loadMqttConfig();
+  if (!ConfigurationStore::begin()) {
+    Serial.println("CONFIGURATION_STORE_INIT_FAILED");
+  }
 
   runtimeEvents.subscribe(handleRuntimeEvent);
   runtimeComponents.add(connectivityComponent);

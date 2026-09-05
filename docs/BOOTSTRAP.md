@@ -304,7 +304,7 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. Start **Stage 7** with a versioned, validated, transactional `ConfigurationStore` in NVS.
+1. Continue **Stage 7A**: the dual-slot transactional `ConfigurationStore` is implemented; physically prove apply/reboot/rollback persistence before starting RuleEngine execution.
 2. Introduce the first local `RuleEngine` path with TaskScheduler + FSM semantics and no dependency on Wi-Fi/MQTT/cloud.
 3. Add a local scheduling abstraction for rule evaluation and delayed/settling behavior; tasks remain disabled until work is meaningful.
 4. Keep the cross-cutting network-hardening backlog: replace `setInsecure()` with CA validation, then add MQTT LWT and backoff/jitter.

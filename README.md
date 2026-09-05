@@ -29,6 +29,8 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 **Stage 6 core physical baseline:** `0.1.25/build 26`, `app0`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. OTA scheduling, MQTT reconnect/telemetry and Wi-Fi reconnect timing use the shared TaskScheduler cooperative runtime; work tasks stay disabled when no meaningful work exists. Stage 7 is next.
 
+**Stage 7A has started:** `ConfigurationStore` introduces versioned dual-slot NVS transactions with verified inactive-slot writes, monotonic revisions, boot fallback and rollback. Rule execution is not enabled until the RuleEngine semantic layer is added and validated.
+
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 
 ```text

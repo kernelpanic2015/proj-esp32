@@ -333,3 +333,10 @@ Stage 6E removes the last hand-written periodic Wi-Fi retry timer from the main 
 Physical proof on `0.1.24-remote-test/build 25` observed a real Wi-Fi outage, HTTP loss, scheduler-driven reconnect, MQTT recovery, component/Supervisor recovery and telemetry resumption. The clean `0.1.25/build 26` image removed the lab endpoint and remained healthy.
 
 The Stage 6 runtime pattern is now established: **TaskScheduler owns when work is meaningful and due; FSMs own state/behavior; EventBus carries transitions; components own subsystem interpretation; Supervisor aggregates health only.** Future sensors, actuators, rule evaluation and recovery timers should adopt this pattern when introduced or when a migration materially improves the code.
+
+
+### Stage 7A configuration transaction boundary
+
+`ConfigurationStore` is the durable boundary for local automation configuration. It uses two NVS slots plus a one-byte active pointer. A candidate is validated, written to the inactive slot, read back, validated again and only then activated. The old slot remains the rollback source. Rollback creates a new monotonic revision containing the previous payload.
+
+The store is intentionally not the RuleEngine. Stage 7A only guarantees persistence, structural validation, revisioning and recovery. RuleEngine/Scheduler will consume snapshots and add semantic validation/execution under the established TaskScheduler + FSM ownership model.

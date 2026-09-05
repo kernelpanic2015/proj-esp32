@@ -177,16 +177,19 @@ Stage 6 core is therefore validated. Future subsystems should continue adopting 
 
 Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 
-## Stage 7 — Persistent configuration and local rule engine
+## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7A]
 
 Implement versioned, validated, transactional configuration with rollback to previous configuration.
 
 Core services:
 
-- `ConfigurationStore`;
-- `RuleEngine`;
-- `Scheduler`;
-- dependency/fault policies for actuators.
+- [x] **Stage 7A foundation** — dual-slot transactional NVS `ConfigurationStore`, monotonic revision, verified inactive-slot write, boot fallback and rollback API;
+- [ ] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
+- [ ] `RuleEngine` with semantic rule validation and TaskScheduler-driven evaluation;
+- [ ] local `Scheduler` for schedules/delayed actions/settling windows;
+- [ ] dependency/fault policies for actuators.
+
+Stage 7A stores rule/schedule envelopes but does not execute them yet. Rule semantics become active only after the RuleEngine validator/evaluator is introduced.
 
 A configured rule such as `heater ON below 16 C / OFF above 18 C` must continue operating with all external connectivity removed.
 
