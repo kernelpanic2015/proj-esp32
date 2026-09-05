@@ -324,3 +324,12 @@ Wi-Fi reconnect timing is the next incremental migration to the common cooperati
 #### MQTT telemetry payload budget
 
 The common `/api/status` document is also used as the current MQTT telemetry payload. Stage 6E added Wi-Fi runtime observability and made the document 2199 bytes, exceeding the previous 2048-byte PubSubClient buffer. The buffer is now an explicit 4096-byte project setting. This preserves the current shared-status contract with headroom, while a future telemetry-schema stage may intentionally separate compact periodic telemetry from the full diagnostic status document as the component registry grows.
+
+
+### Stage 6E physical closure
+
+Stage 6E removes the last hand-written periodic Wi-Fi retry timer from the main runtime path. `wifiCoordinatorTask` owns eligibility observation; `wifiReconnectTask` performs reconnect work only while disconnected and eligible. The existing application FSM remains the owner of `ONLINE/OFFLINE` state transitions. On healthy Wi-Fi the reconnect work task is disabled.
+
+Physical proof on `0.1.24-remote-test/build 25` observed a real Wi-Fi outage, HTTP loss, scheduler-driven reconnect, MQTT recovery, component/Supervisor recovery and telemetry resumption. The clean `0.1.25/build 26` image removed the lab endpoint and remained healthy.
+
+The Stage 6 runtime pattern is now established: **TaskScheduler owns when work is meaningful and due; FSMs own state/behavior; EventBus carries transitions; components own subsystem interpretation; Supervisor aggregates health only.** Future sensors, actuators, rule evaluation and recovery timers should adopt this pattern when introduced or when a migration materially improves the code.

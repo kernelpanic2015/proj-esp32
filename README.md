@@ -27,9 +27,7 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 ## Validated baseline — 2026-09-05
 
-**Stage 6D physical baseline:** `0.1.22/build 23`, `app1`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, `Supervisor=RUNNING/OK`, Wi-Fi + MQTT/TLS connected. MQTT reconnect and telemetry timing are now TaskScheduler-driven.
-
-**Stage 6C physical baseline:** `0.1.20/build 21`, `app1`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, `Supervisor=RUNNING/OK`, Wi-Fi + MQTT/TLS connected, EventBus `dropped=0`. Stage 6D is next.
+**Stage 6 core physical baseline:** `0.1.25/build 26`, `app0`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. OTA scheduling, MQTT reconnect/telemetry and Wi-Fi reconnect timing use the shared TaskScheduler cooperative runtime; work tasks stay disabled when no meaningful work exists. Stage 7 is next.
 
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 

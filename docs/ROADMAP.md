@@ -149,7 +149,7 @@ The ESP32 fetches the signed manifest and firmware directly over HTTPS.
 
 Automatic policy compares remote and local monotonic build numbers at a configured interval. A failed update does not disable normal local control.
 
-## Stage 6 — Core modular runtime [in progress — Stage 6D validated, Stage 6E in progress]
+## Stage 6 — Core modular runtime [validated]
 
 Introduce:
 
@@ -170,6 +170,10 @@ Introduce:
 Rule: drivers know hardware; components know behavior; services know communication; supervisor knows only state/health.
 
 Stage 6C is physically validated on `0.1.20/build 21`: a real MQTT interruption kept Wi-Fi/HTTP and the application FSM online, moved `connectivity` to `WIFI_ONLY/DEGRADED` and Supervisor to `DEGRADED`, then recovered both to `ONLINE/OK` and `RUNNING/OK`. EventBus dropped count remained zero.
+
+Stage 6D migrated MQTT reconnect and periodic telemetry timing to TaskScheduler. Stage 6E is physically validated on the clean `0.1.25/build 26` baseline: a controlled full Wi-Fi interruption was observed, the Wi-Fi reconnect work task became eligible only while needed, one reconnect attempt/success restored Wi-Fi and MQTT, connectivity/Supervisor returned to `ONLINE/OK` and `RUNNING/OK`, telemetry resumed, and EventBus dropped count remained zero. A status-payload growth regression discovered during the proof was corrected by making the PubSubClient buffer an explicit 4096-byte project setting.
+
+Stage 6 core is therefore validated. Future subsystems should continue adopting the same TaskScheduler + FSM pattern opportunistically rather than through wholesale rewrites.
 
 Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 

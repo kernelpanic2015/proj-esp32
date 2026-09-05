@@ -11,11 +11,11 @@
 #endif
 
 #ifndef PROJ_FW_VERSION
-#define PROJ_FW_VERSION "0.1.22"
+#define PROJ_FW_VERSION "0.1.25"
 #endif
 
 #ifndef PROJ_FW_BUILD
-#define PROJ_FW_BUILD 23
+#define PROJ_FW_BUILD 26
 #endif
 
 #ifndef PROJ_FW_CHANNEL

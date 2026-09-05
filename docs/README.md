@@ -50,6 +50,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] first real ComponentRegistry entry (`connectivity`) + `/api/components` shared health API implemented
 - [x] standardized ComponentHealth metadata + bounded EventBus transition routing
 - [x] MQTT reconnect + telemetry timing migrated to TaskScheduler and physically proven
+- [x] Wi-Fi reconnect timing migrated to TaskScheduler and physically proven
 - [x] add Supervisor FSM over the common component health model and physically prove `RUNNING -> DEGRADED -> RUNNING`
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
@@ -60,16 +61,16 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after Stage 6D closure:
+Validated directly on the physical device on 2026-09-05 after Stage 6E closure:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.22`, build `23`, channel `dev`
-- running OTA partition: `app1`
-- boot partition: `app1`
-- next update partition: `app0`
+- firmware: `0.1.25`, build `26`, channel `dev`
+- running OTA partition: `app0`
+- boot partition: `app0`
+- next update partition: `app1`
 - native image state: `VALID`
 - application FSM/system: `ONLINE`
 - Wi-Fi: connected
@@ -77,12 +78,13 @@ Validated directly on the physical device on 2026-09-05 after Stage 6D closure:
 - `connectivity`: `ONLINE/OK`
 - Supervisor: `RUNNING/OK`
 - EventBus: `dropped=0`
-- MQTT scheduler: coordinator enabled, reconnect work task disabled while connected, telemetry task enabled
-- scheduled telemetry: physically proven after delayed activation
+- Wi-Fi scheduler: coordinator enabled; reconnect work task disabled while healthy
+- MQTT scheduler: coordinator enabled; reconnect work task disabled while connected; telemetry task enabled
+- PubSubClient payload buffer: explicit 4096 bytes; full status telemetry >2 KiB physically proven
 - remote OTA policy: HTTPS-only
-- lab-only MQTT disconnect endpoint: absent from the clean image
+- lab-only Wi-Fi/MQTT test endpoints: absent from the clean image
 
-Stage 6D moves automatic MQTT reconnect timing and periodic telemetry from hand-written `millis()` checks to TaskScheduler while preserving the existing PubSubClient transport behavior. Work tasks are disabled whenever their work is not meaningful. The next Stage 6 changes should remain incremental; candidates include Wi-Fi retry timing and later network hardening, but only when they fit the same TaskScheduler + FSM ownership model.
+Stage 6 core runtime is validated. TaskScheduler controls timing/eligibility, FSMs control state/behavior, EventBus carries transitions, components own subsystem health interpretation and Supervisor aggregates health. Further migrations remain incremental and should happen only when they improve the implementation. **Stage 7 — persistent configuration and local RuleEngine — is next.**
 
 ## OTA partition layout
 

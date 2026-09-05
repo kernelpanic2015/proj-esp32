@@ -40,16 +40,16 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after Stage 6D MQTT TaskScheduler closure:
+Current physical device state after Stage 6E / Stage 6 core runtime closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.22`
-- build: `23`
+- firmware: `0.1.25`
+- build: `26`
 - channel: `dev`
-- running partition: `app1`
-- boot partition: `app1`
-- next update partition: `app0`
+- running partition: `app0`
+- boot partition: `app0`
+- next update partition: `app1`
 - native OTA image state: `VALID`
 - application FSM/system: `ONLINE`
 - Wi-Fi: connected
@@ -57,13 +57,17 @@ Current physical device state after Stage 6D MQTT TaskScheduler closure:
 - `connectivity`: `ONLINE/OK`
 - Supervisor: `RUNNING/OK`
 - EventBus dropped count: `0`
+- Wi-Fi reconnect work task: disabled while healthy
+- MQTT reconnect work task: disabled while connected
+- MQTT telemetry task: enabled while connected
+- MQTT buffer: explicit `4096` bytes
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 
-`arkhipenko/TaskScheduler` 4.0.8 runs alongside `jonblack/arduino-fsm`: TaskScheduler owns timing/eligibility, FSMs own state/behavior, components own subsystem interpretation, EventBus owns transition delivery, and Supervisor aggregates only registry health.
+`arkhipenko/TaskScheduler` 4.0.8 runs alongside `jonblack/arduino-fsm`: TaskScheduler owns timing/eligibility; FSMs own state/behavior; components own subsystem interpretation; EventBus owns transition delivery; Supervisor aggregates registry health only.
 
-Stage 6D physically proved the MQTT scheduling migration. Reconnect timing and telemetry heartbeat no longer use `lastMqttAttempt`/`lastHeartbeat` polling in the main loop. A real disconnect disabled telemetry work, degraded connectivity/Supervisor without changing the application `ONLINE` state, then the scheduler restored MQTT and re-armed telemetry with its delayed interval. `PubSubClient::loop()` remains an intentional fast cooperative main-loop service call.
+Stage 6E physically proved a full Wi-Fi loss and recovery. The reconnect work task ran only while needed, Wi-Fi and MQTT recovered, local runtime health returned to `ONLINE/OK` and `RUNNING/OK`, and telemetry resumed. The same proof found a 2199-byte status payload exceeding the old 2048-byte MQTT buffer; the explicit 4096-byte buffer corrected the regression and >2 KiB scheduled telemetry was physically published.
 
 Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 70% flash usage.
 
@@ -300,11 +304,11 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. Continue Stage 6 incrementally under the same TaskScheduler + FSM rule; evaluate Wi-Fi retry timing as the next migration candidate rather than rewriting stable code wholesale.
-2. Replace development `setInsecure()` with CA validation for MQTT and remote HTTPS.
-3. Add MQTT LWT/retained offline state and reconnect backoff/jitter after certificate validation design is settled.
-4. Keep network loss as `DEGRADED`, never as a prerequisite for local control.
-5. Continue toward ConfigurationStore/RuleEngine/local Scheduler, then DS3231/TFT/touch/microSD.
+1. Start **Stage 7** with a versioned, validated, transactional `ConfigurationStore` in NVS.
+2. Introduce the first local `RuleEngine` path with TaskScheduler + FSM semantics and no dependency on Wi-Fi/MQTT/cloud.
+3. Add a local scheduling abstraction for rule evaluation and delayed/settling behavior; tasks remain disabled until work is meaningful.
+4. Keep the cross-cutting network-hardening backlog: replace `setInsecure()` with CA validation, then add MQTT LWT and backoff/jitter.
+5. Continue opportunistic TaskScheduler + FSM migration only when touching a subsystem or when it materially reduces custom timing/recovery code.
 
 ## Source-of-truth invariant
 
@@ -314,6 +318,6 @@ After every validated change:
 /home/kernelpanic/Projects/proj-esp32 main == origin/main
 ```
 
-## Stage 6D closure
+## Stage 6 core closure
 
-Stage 6D is validated. The physical baseline is `0.1.22/build 23` on `app1`, native image `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, `Supervisor=RUNNING/OK`, MQTT/TLS connected and EventBus `dropped=0`. Automatic MQTT reconnect timing and periodic telemetry now use TaskScheduler; their work tasks stay disabled when unnecessary. Proceed incrementally from this baseline.
+Stages 6A–6E are validated. Physical baseline is `0.1.25/build 26` on `app0`, native image `VALID`, application `ONLINE`, Wi-Fi + MQTT/TLS connected, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, EventBus `dropped=0`. OTA automatic checks, MQTT reconnect/telemetry and Wi-Fi reconnect timing now use the cooperative TaskScheduler pattern where appropriate. Proceed to Stage 7; preserve this runtime ownership model for future components.

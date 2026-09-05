@@ -119,3 +119,17 @@ Implementation checkpoint:
 - After recovery, `connectivity` returned to `ONLINE/OK`, Supervisor returned to `RUNNING/OK`, MQTT reconnected, and the Wi-Fi reconnect work task returned to disabled.
 - The proof then exposed a separate telemetry budget regression: `/api/status` had grown to 2199 bytes while PubSubClient remained configured with a 2048-byte buffer, so scheduled telemetry attempts correctly ran but `publish()` returned false.
 - The buffer is therefore promoted to an explicit 4096-byte project setting before repeating the telemetry and clean-target proof. This is a transport payload-budget correction, not a Wi-Fi scheduler failure.
+
+
+### Stage 6E physical result — PASS
+
+- Wi-Fi retry timing was removed from the main-loop `lastWifiRetry`/`millis()` path and moved to TaskScheduler with a lightweight coordinator plus a reconnect work task.
+- The reconnect task is disabled while Wi-Fi is healthy, while the config portal is active, and during the controlled lab suppression window.
+- Signed lab image `0.1.24-remote-test/build 25` reached native `PENDING_VERIFY -> VALID`.
+- A controlled full Wi-Fi disconnect made HTTP unavailable and was observed by the runtime. After the 8 s test suppression, TaskScheduler recorded one reconnect attempt and one reconnect success; the work task returned to disabled once Wi-Fi recovered.
+- MQTT then reconnected, `connectivity` returned to `ONLINE/OK`, Supervisor returned to `RUNNING/OK`, and EventBus remained `dropped=0`.
+- Scheduled MQTT telemetry resumed after recovery and published successfully.
+- During the first Stage 6E attempt, the full status document had grown to 2199 bytes while the PubSubClient buffer was 2048 bytes. The runtime correctly exposed repeated `publish_failed`; the buffer was promoted to an explicit 4096-byte project setting and the same >2 KiB status telemetry then published successfully.
+- Clean target `0.1.25/build 26` installed on `app0`, completed `PENDING_VERIFY -> VALID`, returned `ONLINE` with Wi-Fi + MQTT/TLS, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, and the lab-only Wi-Fi disconnect endpoint returned HTTP 404.
+
+**Stage 6E: VALIDATED. Stage 6 core runtime: VALIDATED. Stage 7 is next.**
