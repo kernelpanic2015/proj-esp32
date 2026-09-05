@@ -148,3 +148,17 @@ Implementation checkpoint:
 - Added `RestartService`: intentional software reboot paths call `drd->stop()` before restart. Two deliberate software reboots inside the 10 s DRD window then recovered promptly without entering the configuration portal.
 
 **Stage 7A: VALIDATED. Stage 7B is next.**
+
+
+## 2026-09-05 — Stage 7B minimal RuleEngine
+
+- Added a hardware-independent hysteresis `RuleEngine` plus `VirtualInputComponent` and `VirtualActuatorComponent`.
+- Invalid hysteresis (`on_below >= off_above`) was rejected before activation.
+- Physical sequence `20 -> 15 -> 17 -> 19 -> 17` with thresholds `16/18` proved OFF/HOLD -> ON -> HOLD-ON -> OFF -> HOLD-OFF.
+- Disabling the rule and applying input `10` produced decision `DISABLED` and left the virtual actuator OFF; the enabled evaluation count remained 5.
+- RuleEngine never accesses GPIO; it returns desired state and the actuator component owns application.
+- Lab image `0.1.30-remote-test/build 31` reached `PENDING_VERIFY -> VALID`; Supervisor remained `RUNNING/OK`, EventBus remained `dropped=0`.
+- Clean target `0.1.31/build 32` reached `PENDING_VERIFY -> VALID` on `app0`, Wi-Fi + MQTT/TLS were connected, ConfigurationStore remained revision 3, the normal registry returned to one `connectivity` component, HTTPS-only update policy was restored, and the lab RuleEngine endpoint returned HTTP 404.
+- Aurora issue #731 was labelled failed even though the proof file ended `STAGE7B_PHYSICAL_PROOF_OK`. Follow-up issue #732 inspected the wrapper and showed `RC=0`; closure is based on the explicit physical assertions, proof marker, and live clean-device state rather than the incorrect wrapper label.
+
+**Stage 7B: VALIDATED. Stage 7C is next.**

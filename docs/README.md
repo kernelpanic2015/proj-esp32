@@ -54,7 +54,8 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Wi-Fi reconnect timing migrated to TaskScheduler and physically proven
 - [x] add Supervisor FSM over the common component health model and physically prove `RUNNING -> DEGRADED -> RUNNING`
 - [x] Stage 7A transactional ConfigurationStore: apply/reject/reboot/rollback/OTA persistence physically validated
-- [~] Stage 7B minimal RuleEngine + virtual I/O implementation; physical proof pending
+- [x] Stage 7B minimal RuleEngine + virtual I/O semantics physically validated
+- [~] Stage 7C TaskScheduler/EventBus rule evaluation runtime next
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -64,13 +65,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after Stage 7A closure:
+Validated directly on the physical device on 2026-09-05 after Stage 7B closure:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.29`, build `30`, channel `dev`
+- firmware: `0.1.31`, build `32`, channel `dev`
 - running OTA partition: `app0`
 - boot partition: `app0`
 - next update partition: `app1`
@@ -87,7 +88,7 @@ Validated directly on the physical device on 2026-09-05 after Stage 7A closure:
 - remote OTA policy: HTTPS-only
 - lab-only Wi-Fi/MQTT test endpoints: absent from the clean image
 
-Stage 6 core runtime is validated and Stage 7A transactional configuration is physically validated. Configuration revision 3 survived reboot, rollback and signed OTA. Intentional software restart now clears the DRD marker before reboot so it cannot masquerade as a human double-reset request. **Stage 7B is in progress:** the minimal hardware-independent hysteresis RuleEngine and controlled virtual input/output path are implemented for physical proof.
+Stage 6 core runtime and Stage 7A transactional configuration are validated. **Stage 7B is now physically validated:** the hardware-independent hysteresis RuleEngine correctly drove virtual desired state across ON/OFF thresholds and deadband, rejected invalid semantics, and did not actuate while disabled. The clean image exposes only read-only rule status. **Stage 7C is next:** TaskScheduler/EventBus-driven evaluation with the work task disabled when no rule is active.
 
 ## OTA partition layout
 

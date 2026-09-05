@@ -177,7 +177,7 @@ Stage 6 core is therefore validated. Future subsystems should continue adopting 
 
 Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 
-## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7B]
+## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7C]
 
 Implement versioned, validated, transactional configuration with rollback to previous configuration.
 
@@ -185,7 +185,7 @@ Core services:
 
 - [x] **Stage 7A foundation** — dual-slot transactional NVS `ConfigurationStore`, monotonic revision, verified inactive-slot write, boot fallback and rollback API;
 - [x] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
-- [~] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; manual evaluation proof pending;
+- [x] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; semantic and physical behavior validated;
 - [ ] **Stage 7C** — TaskScheduler-driven/event-forced evaluation with work task disabled when no active rules;
 - [ ] local `Scheduler` for schedules/delayed actions/settling windows;
 - [ ] dependency/fault policies for actuators.
@@ -196,7 +196,9 @@ Stage 7A stores rule/schedule envelopes but does not execute them yet. Rule sema
 
 The proof also exposed a recovery interaction: two intentional software reboots inside the 10 s DoubleResetDetector window could open the 180 s WiFiManager config portal. All intentional firmware restart paths now go through `RestartService`, which calls `drd->stop()` before `ESP.restart()`. Two software reboots inside the DRD window were then physically proven to return ONLINE promptly; manual/hardware resets still retain normal double-reset recovery behavior.
 
-**Stage 7B next:** introduce the smallest useful local rule model with virtual input/output components. Do not access GPIO from RuleEngine.
+**Stage 7B: VALIDATED on hardware.** A controlled `0.1.30-remote-test/build 31` image proved semantic rejection of invalid hysteresis, then exercised a `16/18 C` virtual rule through `20 -> 15 -> 17 -> 19 -> 17`: OFF/HOLD, ON, HOLD-ON, OFF, HOLD-OFF. Disabling the rule prevented actuation even at an input of 10. Supervisor stayed `RUNNING/OK` and EventBus stayed `dropped=0`. Clean `0.1.31/build 32` returned to HTTPS-only operation, retained ConfigurationStore revision 3, exposed only the read-only `/api/rules/status`, and removed all RuleEngine lab endpoints.
+
+**Stage 7C next:** connect this same rule path to TaskScheduler + EventBus. The evaluation work task must remain disabled when there is no active rule, input events may force an iteration, and FSM/component ownership remains separate from scheduling.
 
 A configured rule such as `heater ON below 16 C / OFF above 18 C` must continue operating with all external connectivity removed.
 

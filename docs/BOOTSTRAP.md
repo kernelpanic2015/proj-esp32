@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after Stage 7A transactional configuration closure:
+Current physical device state after Stage 7B minimal RuleEngine closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.29`
-- build: `30`
+- firmware: `0.1.31`
+- build: `32`
 - channel: `dev`
 - running partition: `app0`
 - boot partition: `app0`
@@ -83,7 +83,19 @@ Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 
 - rolled-back revision survived reboot and clean signed OTA;
 - clean physical baseline: `0.1.29/build 30`, `app0/VALID`.
 
-Stage 7B should start with virtual input/output and minimal rule semantics; do not connect RuleEngine directly to GPIO.
+## Stage 7B RuleEngine — validated
+
+- one minimal in-memory hysteresis rule model is implemented;
+- invalid hysteresis is rejected semantically;
+- virtual temperature input and virtual heater actuator proved ON/OFF + deadband behavior;
+- disabled rule does not actuate;
+- RuleEngine produces desired state only and never touches GPIO;
+- clean firmware exposes `GET /api/rules/status`;
+- controlled write/evaluation endpoints exist only in the lab build and are absent from the clean image;
+- clean physical baseline is `0.1.31/build 32`, `app0/VALID`;
+- ConfigurationStore remains revision 3; persisted rule binding is intentionally deferred to Stage 7D.
+
+**Stage 7C next:** TaskScheduler + EventBus runtime evaluation. The evaluation work task must be disabled when no rule is active, input events may force an evaluation, and rule/actuator state ownership remains in the engine/component FSM layer.
 
 ## Flash layout — validated
 

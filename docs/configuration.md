@@ -123,3 +123,30 @@ Stage 7B evaluation is intentionally explicit/manual. Stage 7C will connect the 
 engine to TaskScheduler + EventBus so the evaluation work task is disabled while no
 rule is active and input events can force an iteration. This keeps the distinction
 clear: Stage 7B proves rule semantics; Stage 7C proves runtime scheduling/state flow.
+
+
+## Stage 7B physical validation
+
+Stage 7B was physically proven on the ESP32 with virtual I/O and the signed A/B path. The lab image was `0.1.30-remote-test/build 31` on `app1`, reached `PENDING_VERIFY -> VALID`, and exposed the test-gated virtual rule endpoints.
+
+Acceptance sequence:
+
+```text
+invalid: on_below=18, off_above=16 -> HTTP 400 rule_hysteresis_invalid
+valid:   on_below=16, off_above=18
+
+input 20 -> actuator OFF, HOLD
+input 15 -> actuator ON,  TURN_ON
+input 17 -> actuator ON,  HOLD
+input 19 -> actuator OFF, TURN_OFF
+input 17 -> actuator OFF, HOLD
+
+disable rule
+input 10 -> actuator remains OFF, decision DISABLED
+```
+
+The enabled sequence produced exactly five evaluations. A disabled rule did not increment that count or change the actuator. The RuleEngine only returned desired state; `VirtualActuatorComponent` owned application of that state and no GPIO was touched.
+
+During the lab proof the component registry contained `connectivity`, `virtual.temperature`, and `virtual.heater`; Supervisor remained `RUNNING/OK` and EventBus remained `dropped=0`. The clean `0.1.31/build 32` target then installed on `app0`, reached `VALID`, returned to HTTPS-only remote-update policy, retained ConfigurationStore revision 3, restored the normal registry to only `connectivity`, and returned HTTP 404 for `/api/test/rules/status`. The standard read-only `/api/rules/status` remained available with an unconfigured engine.
+
+Stage 7B intentionally stops at explicit/manual evaluation. Stage 7C adds TaskScheduler + EventBus runtime wiring; Stage 7D later binds persisted rule semantics to ConfigurationStore revisions.
