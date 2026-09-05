@@ -199,7 +199,7 @@ bool connectMqtt() {
           (mqttTls ? " TLS" : ""));
 
   if (!mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str())) {
-    logLine("MQTT connection failed");
+    logLine("MQTT connection failed err=" + String((int)mqttClient.lastError()) + " rc=" + String((int)mqttClient.returnCode()));
     return false;
   }
 
