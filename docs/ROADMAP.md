@@ -149,7 +149,7 @@ The ESP32 fetches the signed manifest and firmware directly over HTTPS.
 
 Automatic policy compares remote and local monotonic build numbers at a configured interval. A failed update does not disable normal local control.
 
-## Stage 6 — Core modular runtime [in progress — Stage 6C validated, Stage 6D next]
+## Stage 6 — Core modular runtime [in progress — Stage 6D validated]
 
 Introduce:
 
@@ -165,11 +165,13 @@ Introduce:
 - [x] route component state/health transitions through the bounded `EventBus`;
 - [x] `Supervisor` FSM implementation: TaskScheduler-driven health aggregation over ComponentRegistry with RUNNING/DEGRADED/FAULT states;
 - [x] physical proof of Supervisor `RUNNING -> DEGRADED -> RUNNING` through a controlled real MQTT transport interruption;
-- [~] **Stage 6D** — MQTT reconnect eligibility/retry cadence and periodic telemetry heartbeat migrated to TaskScheduler; physical disconnect/reconnect + telemetry proof pending.
+- [x] **Stage 6D** — MQTT reconnect eligibility/retry cadence and periodic telemetry heartbeat migrated to TaskScheduler and physically proven through disconnect/recovery + telemetry re-arm.
 
 Rule: drivers know hardware; components know behavior; services know communication; supervisor knows only state/health.
 
 Stage 6C is physically validated on `0.1.20/build 21`: a real MQTT interruption kept Wi-Fi/HTTP and the application FSM online, moved `connectivity` to `WIFI_ONLY/DEGRADED` and Supervisor to `DEGRADED`, then recovered both to `ONLINE/OK` and `RUNNING/OK`. EventBus dropped count remained zero.
+
+Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 
 ## Stage 7 — Persistent configuration and local rule engine
 

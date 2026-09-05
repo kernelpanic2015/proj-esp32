@@ -83,4 +83,18 @@ Implementation checkpoint:
 - telemetry task is disabled while MQTT is disconnected and delayed by the configured heartbeat interval after connection;
 - existing `PubSubClient::loop()` and connection/publish semantics remain unchanged;
 - `/api/mqtt/runtime` exposes task enable state and reconnect/telemetry counters;
-- physical proof pending: signed lab image, real MQTT disconnect/recovery, telemetry counter progression, clean target image.
+- physical proof completed: signed lab image, real MQTT disconnect/recovery, telemetry counter progression, and clean target image all passed.
+
+### Stage 6D physical result — PASS
+
+- Signed lab image `0.1.21-remote-test/build 22` installed on `app0` and completed `PENDING_VERIFY -> VALID`.
+- On boot, TaskScheduler performed the initial MQTT connect (`reconnect_attempt_count=1`, `reconnect_success_count=1`) and left the reconnect task disabled while connected.
+- The telemetry task was enabled only after MQTT became connected and produced its first publish after the delayed heartbeat interval (`telemetry_publish_count=1`, `last_telemetry_result=published`).
+- A real MQTT disconnect was triggered with reconnect suppressed for 8 s only in the test image. While disconnected, the application remained `ONLINE`, `connectivity=WIFI_ONLY/DEGRADED`, Supervisor became `DEGRADED`, and the telemetry task was disabled.
+- Once reconnect became eligible, the TaskScheduler reconnect path increased the attempt/success counters, restored MQTT, returned `connectivity=ONLINE/OK` and Supervisor `RUNNING/OK`, and left the reconnect task disabled again.
+- Telemetry then re-armed with its normal delay and the publish counter advanced again.
+- Clean target `0.1.22/build 23` installed on `app1`, completed `PENDING_VERIFY -> VALID`, returned ONLINE with Wi-Fi + MQTT/TLS, and produced a scheduled telemetry publish on the clean image.
+- EventBus remained `dropped=0`; the lab-only disconnect endpoint returned HTTP 404 on the final image.
+- The first proof wrapper stopped after the degradation assertion despite the device recovering; a focused continuation repeated the real disconnect/recovery assertions and ended `STAGE6D_PHYSICAL_PROOF_OK`.
+
+**Stage 6D: VALIDATED.**

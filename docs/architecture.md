@@ -305,3 +305,12 @@ mqttTelemetryTask (10 s periodic)
 The important platform rule is preserved: work tasks remain disabled when their work is meaningless. `PubSubClient::loop()` remains a fast per-loop cooperative service call for now; Stage 6D changes timing/eligibility, not the proven transport implementation. The synchronous `PubSubClient::connect()` body is intentionally unchanged in this migration and can be hardened separately if connection latency later becomes a scheduling problem.
 
 `GET /api/mqtt/runtime` exposes scheduler/counter state without credentials so reconnect and telemetry cadence can be physically validated.
+
+
+### Stage 6D physical proof and closure
+
+Stage 6D is physically validated. `lastMqttAttempt` and `lastHeartbeat` are gone from the main loop. A lightweight coordinator task determines eligibility; the reconnect work task is disabled while connected/unavailable and runs immediately when reconnect becomes meaningful, then repeats on the configured retry interval after failures; the telemetry work task is disabled while disconnected and uses delayed activation after connection.
+
+The controlled proof showed `ONLINE/OK -> WIFI_ONLY/DEGRADED -> ONLINE/OK` for connectivity and `RUNNING/OK -> DEGRADED -> RUNNING/OK` for Supervisor during a real MQTT interruption, while the application FSM remained `ONLINE`. Reconnect counters advanced through the TaskScheduler path and telemetry publishing resumed after its delayed interval. The clean `0.1.22/build 23` image is the promoted baseline.
+
+`PubSubClient::loop()` intentionally remains a fast cooperative call in the main loop; Stage 6D migrated timing/eligibility without changing the proven transport implementation. Future migration should only move additional work when it improves the common TaskScheduler + FSM pattern without destabilizing local control.

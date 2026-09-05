@@ -49,6 +49,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] TaskScheduler + arduino-fsm cooperative runtime foundation; automatic scheduler migration proven on hardware
 - [x] first real ComponentRegistry entry (`connectivity`) + `/api/components` shared health API implemented
 - [x] standardized ComponentHealth metadata + bounded EventBus transition routing
+- [x] MQTT reconnect + telemetry timing migrated to TaskScheduler and physically proven
 - [x] add Supervisor FSM over the common component health model and physically prove `RUNNING -> DEGRADED -> RUNNING`
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
@@ -59,13 +60,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after Stage 6C closure:
+Validated directly on the physical device on 2026-09-05 after Stage 6D closure:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.20`, build `21`, channel `dev`
+- firmware: `0.1.22`, build `23`, channel `dev`
 - running OTA partition: `app1`
 - boot partition: `app1`
 - next update partition: `app0`
@@ -75,11 +76,13 @@ Validated directly on the physical device on 2026-09-05 after Stage 6C closure:
 - MQTT: connected over TLS
 - `connectivity`: `ONLINE/OK`
 - Supervisor: `RUNNING/OK`
-- EventBus: `pending=0`, `dropped=0`
+- EventBus: `dropped=0`
+- MQTT scheduler: coordinator enabled, reconnect work task disabled while connected, telemetry task enabled
+- scheduled telemetry: physically proven after delayed activation
 - remote OTA policy: HTTPS-only
 - lab-only MQTT disconnect endpoint: absent from the clean image
 
-Stage 6A established cooperative TaskScheduler timing. Stage 6B established the component registry, shared health metadata and EventBus. Stage 6C physically proves aggregate Supervisor degradation/recovery. **Stage 6D is next: move MQTT reconnect and telemetry cadence from hand-written `millis()` timing into TaskScheduler without changing existing transport semantics.**
+Stage 6D moves automatic MQTT reconnect timing and periodic telemetry from hand-written `millis()` checks to TaskScheduler while preserving the existing PubSubClient transport behavior. Work tasks are disabled whenever their work is not meaningful. The next Stage 6 changes should remain incremental; candidates include Wi-Fi retry timing and later network hardening, but only when they fit the same TaskScheduler + FSM ownership model.
 
 ## OTA partition layout
 
