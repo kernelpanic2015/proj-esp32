@@ -33,3 +33,18 @@ The Aurora physical proof result is appended to this file when the stage complet
 - EventBus reported `pending=0`, `dropped=0`.
 - Normal build after integration uses about 17.0% static RAM and 69.1% of the 1728 KiB OTA slot.
 - `0.1.17/build 18` is the promoted default baseline.
+
+
+## 2026-09-05 — Stage 6C Supervisor FSM
+
+Implementation/build acceptance:
+
+- Supervisor is a dedicated `arduino-fsm` machine, not an enum-only pseudo-FSM;
+- TaskScheduler evaluates it cooperatively every 1 s;
+- aggregate health is derived only from `ComponentRegistry`;
+- component `DEGRADED`/`RECOVERING` produces Supervisor `DEGRADED`; component `FAULT` produces Supervisor `FAULT`;
+- transitions are emitted through the bounded EventBus;
+- `/api/supervisor` and `/api/status.supervisor` expose the same aggregate model;
+- production build and controlled Stage 6C test/final OTA profiles compile before physical proof.
+
+Physical acceptance still pending at this checkpoint: signed OTA into the controlled test image, real MQTT disconnect with Wi-Fi/HTTP preserved, observe `RUNNING -> DEGRADED -> RUNNING`, then install the clean no-test-endpoint target image and promote it.

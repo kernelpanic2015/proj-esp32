@@ -313,3 +313,8 @@ After every validated change:
 ```text
 /home/kernelpanic/Projects/proj-esp32 main == origin/main
 ```
+
+
+## Stage 6C implementation checkpoint
+
+The Supervisor FSM is implemented as a real `arduino-fsm` machine and scheduled cooperatively by TaskScheduler. It aggregates only `ComponentRegistry` health, publishes state changes through EventBus, exposes `/api/supervisor`, and is embedded in `/api/status`/MQTT telemetry. The next safe action is the controlled signed physical proof: lab test image -> real MQTT disconnect -> Supervisor `RUNNING -> DEGRADED -> RUNNING` -> clean target image with the test endpoint absent.

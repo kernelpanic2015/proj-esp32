@@ -163,7 +163,8 @@ Introduce:
 - [x] standardized component fault metadata (`ComponentHealth`);
 - [x] generic registry serialization exposed at `/api/components` and embedded in `/api/status`/MQTT telemetry;
 - [x] route component state/health transitions through the bounded `EventBus`;
-- [ ] `Supervisor` FSM;
+- [x] `Supervisor` FSM implementation: TaskScheduler-driven health aggregation over ComponentRegistry with RUNNING/DEGRADED/FAULT states;
+- [ ] physical proof of Supervisor `RUNNING -> DEGRADED -> RUNNING` through a controlled real MQTT transport interruption;
 - [ ] migrate additional periodic/retry work to TaskScheduler where it improves consistency (MQTT reconnect, telemetry, future sensors/actuators).
 
 Rule: drivers know hardware; components know behavior; services know communication; supervisor knows only state/health.

@@ -254,3 +254,22 @@ State/health transitions are posted to the bounded `EventBus`; the current handl
 ### Stage 6B physical proof
 
 A signed `0.1.17/build 18` image was installed on the physical ESP32 and completed `PENDING_VERIFY -> VALID` on `app0`. After network settlement, `/api/components` exposed `connectivity` as `ONLINE` / `OK`, `/api/status` embedded the same registry, MQTT/TLS was connected, and EventBus reported zero dropped events. The PubSubClient packet buffer is 2048 bytes to retain telemetry headroom as the common component model grows. This establishes the first real end-to-end component using TaskScheduler cadence + component-owned state/health + EventBus transitions + shared API/MQTT serialization.
+
+
+## Supervisor FSM (Stage 6C)
+
+The Supervisor is a separate `arduino-fsm` state machine evaluated by a TaskScheduler task. It does not operate hardware and does not own network transport. It reads only the shared `ComponentRegistry` health model and derives aggregate platform health.
+
+```text
+ComponentRegistry -> Supervisor.evaluate() -> arduino-fsm
+                                      |
+                                      +-> RUNNING
+                                      +-> DEGRADED
+                                      +-> FAULT
+```
+
+`INITIALIZING` maps to health `RECOVERING`; all enabled components healthy maps to `RUNNING/OK`; any component `DEGRADED` or `RECOVERING` maps the platform to `DEGRADED`; any component `FAULT` maps it to `FAULT`. Disabled optional components do not by themselves degrade the platform.
+
+TaskScheduler owns the 1 s evaluation cadence. State transitions are posted to the bounded EventBus as `SupervisorStateChanged`, keeping the Supervisor observable without allowing it to reach into component internals. `/api/supervisor` exposes the aggregate state, counts per health class, transition timestamp and evaluation count. The same object is embedded into `/api/status` and therefore existing MQTT telemetry.
+
+Stage 6C includes a lab-only MQTT disconnect endpoint in the already test-gated build profile. It suppresses MQTT reconnect briefly so the physical device can prove `RUNNING -> DEGRADED -> RUNNING` while Wi-Fi and HTTP remain available. Production/default builds do not expose this endpoint.

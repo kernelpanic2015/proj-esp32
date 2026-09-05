@@ -26,6 +26,7 @@
 #include "core/component_registry.h"
 #include "core/event_bus.h"
 #include "core/runtime_events.h"
+#include "core/supervisor.h"
 #include "components/connectivity_component.h"
 
 enum Event : int {
@@ -55,17 +56,21 @@ DoubleResetDetector* drd = nullptr;
 Scheduler cooperativeScheduler;
 RuntimeCore::EventBus runtimeEvents;
 RuntimeCore::ComponentRegistry runtimeComponents;
+RuntimeCore::Supervisor runtimeSupervisor(runtimeComponents, runtimeEvents);
 
 bool mqttConfigured();
 bool runtimeWifiConnected();
 bool runtimeMqttConnected();
 bool runtimeMqttConfigured();
 void sampleConnectivityComponent();
+void evaluateRuntimeSupervisor();
 
 Components::ConnectivityComponent connectivityComponent(
     runtimeEvents, runtimeWifiConnected, runtimeMqttConnected, runtimeMqttConfigured);
 Task connectivityHealthTask(2000, TASK_FOREVER, sampleConnectivityComponent,
                             &cooperativeScheduler, false);
+Task supervisorTask(1000, TASK_FOREVER, evaluateRuntimeSupervisor,
+                    &cooperativeScheduler, false);
 
 bool webStarted = false;
 bool networkServicesStarted = false;
@@ -86,6 +91,9 @@ bool mqttTls = false;
 unsigned long lastMqttAttempt = 0;
 unsigned long lastHeartbeat = 0;
 unsigned long lastWifiRetry = 0;
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+unsigned long mqttReconnectSuppressedUntil = 0;
+#endif
 
 const char* stateName(AppState state) {
   switch (state) {
@@ -112,6 +120,8 @@ void handleRuntimeEvent(const RuntimeCore::Event& event) {
   } else if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::ComponentHealthChanged)) {
     logLine("EVENT component_health source=" + String(event.source) +
             " value=" + String(event.value));
+  } else if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::SupervisorStateChanged)) {
+    logLine("EVENT supervisor_state value=" + String(event.value));
   }
 }
 
@@ -201,6 +211,10 @@ bool runtimeMqttConfigured() {
 
 void sampleConnectivityComponent() {
   connectivityComponent.sample();
+}
+
+void evaluateRuntimeSupervisor() {
+  runtimeSupervisor.evaluate();
 }
 
 String componentsStatusJson() {
@@ -427,6 +441,7 @@ void startNetworkServices() {
     body += "update_policy=/api/update/policy\n";
     body += "update_scheduler=/api/update/scheduler\n";
     body += "components=/api/components\n";
+    body += "supervisor=/api/supervisor\n";
     body += "console=/webserial\n";
     body += "mqtt_config=/config/mqtt\n";
     request->send(200, "text/plain", body);
@@ -438,6 +453,10 @@ void startNetworkServices() {
 
   server.on("/api/components", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", componentsStatusJson());
+  });
+
+  server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", runtimeSupervisor.statusJson());
   });
 
   server.on("/config/mqtt", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -562,7 +581,9 @@ void setup() {
   if (!runtimeComponents.beginAll()) {
     Serial.println("RUNTIME_COMPONENT_INIT_DEGRADED");
   }
+  runtimeSupervisor.begin();
   connectivityHealthTask.enableDelayed(2000);
+  supervisorTask.enableDelayed(1000);
 
   FirmwareUpdate::begin(preferencesReady);
   RemoteFirmwareUpdate::begin();
@@ -672,7 +693,11 @@ void loop() {
   WebSerial.loop();
   mqttClient.loop();
 
-  if (!mqttClient.connected() && mqttConfigured() &&
+  bool mqttReconnectAllowed = true;
+#ifdef PROJ_OTA_TEST_MQTT_LOOPBACK_ENDPOINT
+  mqttReconnectAllowed = millis() >= mqttReconnectSuppressedUntil;
+#endif
+  if (mqttReconnectAllowed && !mqttClient.connected() && mqttConfigured() &&
       millis() - lastMqttAttempt >= ProjectConfig::MQTT_RECONNECT_INTERVAL_MS) {
     connectMqtt();
   }
