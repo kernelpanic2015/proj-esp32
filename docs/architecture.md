@@ -31,9 +31,12 @@ ESP32 firmware
 ├── web
 │   ├── ESPAsyncWebServer
 │   ├── /api/status
+│   ├── /config/mqtt
 │   └── /webserial
 ├── messaging
-│   └── MQTT
+│   ├── PubSubClient
+│   ├── WiFiClient / WiFiClientSecure
+│   └── NVS-backed broker configuration
 └── hardware (later)
     ├── TFT_eSPI
     ├── XPT2046 touch
@@ -43,9 +46,9 @@ ESP32 firmware
 
 ## State machine
 
-The first firmware base uses `jonblack/arduino-fsm` as the high-level coordinator.
+The firmware uses `jonblack/arduino-fsm` as the high-level coordinator.
 
-Initial states:
+Current states:
 
 ```text
 BOOT
@@ -77,13 +80,13 @@ Future states may include:
 
 ## Recovery / provisioning
 
-A double reset inside the configured detection window requests a recovery/configuration boot. The initial implementation uses `ESP_DoubleResetDetector` behind a narrow recovery concept so that the archived dependency can later be replaced without changing the rest of the firmware.
+A double reset inside the configured detection window requests recovery/configuration boot. `ESP_DoubleResetDetector` is kept behind a narrow recovery concept so the archived dependency can later be replaced without changing the rest of the firmware.
 
-Provisioning is provided by WiFiManager. Initial AP identity:
+Provisioning is provided by WiFiManager. Recovery AP identity:
 
 `proj-esp32-setup`
 
-After provisioning, the device should normally join the saved Wi-Fi without hard-coded credentials in the repository.
+After provisioning, the device normally joins saved Wi-Fi without hard-coded credentials in the repository.
 
 ## Web services
 
@@ -91,23 +94,42 @@ Once Wi-Fi is connected, the firmware exposes:
 
 - `/` — human-readable device landing page
 - `/api/status` — machine-readable state, IP, RSSI, uptime and MQTT status
-- `/webserial` — WebSerial browser console
+- `/config/mqtt` — local broker configuration persisted to NVS
+- `/webserial` — browser runtime console
 
-The intended mDNS hostname is:
+mDNS hostname:
 
 `proj-esp32.local`
 
-## MQTT
+## MQTT / RabbitMQ
 
-Initial broker target:
+MQTT is the device/event transport. The validated client is `PubSubClient` 2.8.x.
 
-`kpnote.local:1883`
+Current validated broker path:
 
-Initial topic root:
+```text
+ESP32
+  |
+  | MQTT/TLS 8883
+  v
+CloudAMQP / RabbitMQ
+  |
+  +-- MQTT clients
+  +-- future AMQP workers
+  +-- future MCP/backend consumers
+```
+
+Validated CloudAMQP hostname:
+
+`jackal.rmq.cloudamqp.com`
+
+Credentials are provisioned at runtime and stored in NVS; they do not belong in source control.
+
+Topic root:
 
 `lab/proj-esp32`
 
-Planned topics are derived from the device identifier, for example:
+Per-device topics:
 
 ```text
 lab/proj-esp32/<device-id>/state
@@ -116,32 +138,59 @@ lab/proj-esp32/<device-id>/events
 lab/proj-esp32/<device-id>/cmd
 ```
 
-The base firmware should publish an online/heartbeat state and subscribe to the command topic. Commands must remain intentionally small and auditable; unrestricted shell-like behavior does not belong on the ESP32.
+Current behavior:
+
+- subscribe to `/cmd`
+- publish retained online state on `/state`
+- publish heartbeat/status telemetry about every 10 seconds
+- publish command responses on `/events`
+- process intentionally small commands such as `ping`, `status` and `reboot`
+
+Unrestricted shell-like behavior does not belong on the ESP32.
+
+The end-to-end `ping` round-trip through RabbitMQ has been validated. See `mqtt.md`.
+
+## MQTT hardening boundary
+
+Current development TLS uses `WiFiClientSecure::setInsecure()`. This proves encrypted transport but does not authenticate the broker certificate.
+
+Before production use, the messaging layer should add:
+
+- CA certificate validation
+- LWT retained offline state
+- reconnect backoff/jitter
+- explicit topic permissions per device
+- QoS policy
+- a dedicated nonblocking `MQTTService` extracted from `main.cpp`
+
+The user's older `kernelpanic2015/MQTT-LIB` is useful as a design reference because it wraps PubSubClient, but its blocking reconnect loop and non-TLS `WiFiClient` implementation must not be copied unchanged.
 
 ## OTA
 
-ArduinoOTA is intended as the first OTA mechanism. USB/CP2102 remains the recovery path.
+ArduinoOTA is the first OTA mechanism. USB/CP2102 remains the recovery path.
 
-The normal development progression becomes:
+Normal development progression:
 
 ```text
 first/recovery flash -> USB
-normal iteration     -> OTA
+normal iteration     -> OTA (after validation)
 runtime observation  -> WebSerial + MQTT + serial fallback
 ```
 
 ## Relationship to the wider lab
 
-The longer-term device path is:
+Longer-term device path:
 
 ```text
 AI / agent
     |
    MCP
     |
-notebook device manager
+backend / device manager
     |
-   MQTT
+RabbitMQ
+    |
+ MQTT/TLS
     |
   ESP32
     |
