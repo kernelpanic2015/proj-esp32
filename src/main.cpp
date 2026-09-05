@@ -7,7 +7,7 @@
 #include <AsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 #include <WebSerial.h>
-#include <MQTT.h>
+#include <PubSubClient.h>
 #include <Preferences.h>
 #include <Fsm.h>
 
@@ -39,7 +39,7 @@ enum class AppState {
 AsyncWebServer server(80);
 WiFiClient plainNetworkClient;
 WiFiClientSecure secureNetworkClient;
-MQTTClient mqttClient(512);
+PubSubClient mqttClient;
 WiFiManager wifiManager;
 Preferences preferences;
 DoubleResetDetector* drd = nullptr;
@@ -171,13 +171,21 @@ String statusJson() {
   return json;
 }
 
-void mqttMessageReceived(String& topic, String& payload) {
-  logLine("MQTT RX " + topic + " => " + payload);
+void mqttMessageReceived(char* topic, byte* payload, unsigned int length) {
+  String topicString(topic);
+  String payloadString;
+  payloadString.reserve(length);
+  for (unsigned int i = 0; i < length; ++i) {
+    payloadString += static_cast<char>(payload[i]);
+  }
 
-  if (payload == "ping" || payload == "status") {
-    mqttClient.publish(topicEvents, statusJson());
-  } else if (payload == "reboot") {
-    mqttClient.publish(topicEvents, "{\"event\":\"reboot_requested\"}");
+  logLine("MQTT RX " + topicString + " => " + payloadString);
+
+  if (payloadString == "ping" || payloadString == "status") {
+    String response = statusJson();
+    mqttClient.publish(topicEvents.c_str(), response.c_str());
+  } else if (payloadString == "reboot") {
+    mqttClient.publish(topicEvents.c_str(), "{\"event\":\"reboot_requested\"}");
     delay(100);
     ESP.restart();
   }
@@ -195,32 +203,17 @@ bool connectMqtt() {
 
   lastMqttAttempt = millis();
   String clientId = String(ProjectConfig::DEVICE_HOSTNAME) + "-" + deviceId;
-  logLine("MQTT connecting to " + mqttHost + ":" + String(mqttPort) +
+  logLine("MQTT/PubSubClient connecting to " + mqttHost + ":" + String(mqttPort) +
           (mqttTls ? " TLS" : ""));
 
-  bool mqttConnected = false;
-  if (mqttTls) {
-    secureNetworkClient.stop();
-    logLine("TLS connecting to " + mqttHost + ":" + String(mqttPort));
-    if (!secureNetworkClient.connect(mqttHost.c_str(), mqttPort)) {
-      logLine("TLS connection failed");
-      return false;
-    }
-    logLine("TLS connection established");
-    mqttConnected = mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str(), true);
-  } else {
-    mqttConnected = mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str());
-  }
-
-  if (!mqttConnected) {
-    logLine("MQTT connection failed err=" + String((int)mqttClient.lastError()) + " rc=" + String((int)mqttClient.returnCode()));
-    if (mqttTls) secureNetworkClient.stop();
+  if (!mqttClient.connect(clientId.c_str(), mqttUsername.c_str(), mqttPassword.c_str())) {
+    logLine("MQTT/PubSubClient connection failed state=" + String(mqttClient.state()));
     return false;
   }
 
-  mqttClient.subscribe(topicCommand);
-  mqttClient.publish(topicState, "{\"online\":true}", true, 0);
-  logLine("MQTT connected; subscribed to " + topicCommand);
+  mqttClient.subscribe(topicCommand.c_str());
+  mqttClient.publish(topicState.c_str(), "{\"online\":true}", true);
+  logLine("MQTT/PubSubClient connected; subscribed to " + topicCommand);
   return true;
 }
 
@@ -356,11 +349,14 @@ void startNetworkServices() {
     // Development mode: encrypted transport without CA verification.
     // Replace setInsecure() with a CA certificate before production use.
     secureNetworkClient.setInsecure();
-    mqttClient.begin(mqttHost.c_str(), mqttPort, secureNetworkClient);
+    mqttClient.setClient(secureNetworkClient);
   } else {
-    mqttClient.begin(mqttHost.c_str(), mqttPort, plainNetworkClient);
+    mqttClient.setClient(plainNetworkClient);
   }
-  mqttClient.onMessage(mqttMessageReceived);
+  mqttClient.setServer(mqttHost.c_str(), mqttPort);
+  mqttClient.setBufferSize(512);
+  mqttClient.setKeepAlive(30);
+  mqttClient.setCallback(mqttMessageReceived);
 
   networkServicesStarted = true;
   logLine("HTTP server ready: http://" + WiFi.localIP().toString() + "/");
@@ -496,7 +492,8 @@ void loop() {
   if (mqttClient.connected() &&
       millis() - lastHeartbeat >= ProjectConfig::HEARTBEAT_INTERVAL_MS) {
     lastHeartbeat = millis();
-    mqttClient.publish(topicTelemetry, statusJson());
+    String telemetry = statusJson();
+    mqttClient.publish(topicTelemetry.c_str(), telemetry.c_str());
   }
 
   delay(2);
