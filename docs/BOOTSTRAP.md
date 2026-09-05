@@ -34,15 +34,31 @@ Linux USB/udev confirmed CP2102 (`10c4:ea60`) using `cp210x` and exposing `/dev/
 
 The complete development path is working:
 
-`ChatGPT -> GitHub issue -> Aurora Client -> kpnote -> PlatformIO -> /dev/ttyUSB0 -> ESP32 -> serial/WebSerial/MQTT output`
+`ChatGPT -> GitHub issue -> Aurora Client -> kpnote -> PlatformIO -> ESP32 -> HTTP/WebSerial/MQTT`
 
-The ESP32 flash was intentionally erased during bootstrap; no legacy firmware needs to be preserved.
+GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora Watch is the preferred read-only observation plane.
 
-## Current firmware state — validated 2026-09-05
+## Current firmware baseline — verified 2026-09-05
 
-The current firmware has been compiled, flashed and validated online.
+Current physical device state after the controlled rollback proof:
 
-Resolved dependency set:
+- model: `proj-esp32-35`
+- hardware revision: `1`
+- firmware: `0.1.3`
+- build: `4`
+- channel: `dev`
+- running partition: `app1`
+- boot partition: `app1`
+- next update partition: `app0`
+- native OTA image state: `VALID`
+- system/FSM: `ONLINE`
+- Wi-Fi: connected
+- MQTT/TLS: connected
+- hostname: `proj-esp32`
+- mDNS: `proj-esp32.local`
+- device ID: `10A2CCEF49C0`
+
+Resolved dependency baseline:
 
 - arduino-fsm 2.2.0
 - ESP_DoubleResetDetector 1.3.2
@@ -53,14 +69,28 @@ Resolved dependency set:
 - WebSerial 2.1.2
 - ArduinoOTA 2.0.0
 - ESPmDNS 2.0.0
-- Preferences / WiFi / WiFiClientSecure from Arduino-ESP32
+- Preferences / WiFi / WiFiClientSecure / Update from Arduino-ESP32
 
-Latest measured PubSubClient build footprint:
+Latest normal build measured during rollback-candidate preparation:
 
-- RAM: 54,532 / 327,680 bytes (16.6%)
-- application flash partition: 1,143,265 / 1,310,720 bytes (87.2%)
+- RAM: about 54.5 KiB / 320 KiB (16.6%)
+- firmware: about 1.15 MiB / 1.6875 MiB application slot (65%)
 
-The default OTA-capable partition still fits, but flash headroom is now limited. Any TFT/UI/assets phase must watch binary growth carefully.
+## Flash layout — validated
+
+`platformio.ini` uses `partitions/ota_4mb.csv` and `board_build.filesystem = littlefs`.
+
+```text
+4 MB flash
+├── nvs        20 KiB
+├── otadata     8 KiB
+├── app0      1728 KiB
+├── app1      1728 KiB
+├── filesystem 512 KiB
+└── coredump    64 KiB
+```
+
+The partition CSV uses the ESP32 data subtype name `spiffs` for the 512 KiB filesystem region; PlatformIO is configured to mount/build it as LittleFS.
 
 ## Recovery and provisioning — validated
 
@@ -77,78 +107,111 @@ WiFiManager runs the config portal in nonblocking mode. Recovery/config AP:
 - SSID: `proj-esp32-setup`
 - AP IP: `192.168.4.1`
 
-Wi-Fi credentials have since been provisioned successfully. Normal boot reaches STA `ONLINE`.
+Wi-Fi credentials are provisioned and normal boot reaches STA `ONLINE`.
 
-## Current online services — validated
+## Current HTTP/Web services — validated
 
-Current device identity:
-
-- hostname: `proj-esp32`
-- mDNS: `proj-esp32.local`
-- device ID: `10A2CCEF49C0`
-- validated LAN IP during tests: `192.168.1.101`
-
-Validated endpoints:
+Validated endpoints include:
 
 - `http://proj-esp32.local/`
 - `http://proj-esp32.local/api/status`
+- `http://proj-esp32.local/api/version`
+- `http://proj-esp32.local/api/update/status`
+- `http://proj-esp32.local/update`
+- `POST http://proj-esp32.local/api/update/upload`
 - `http://proj-esp32.local/webserial`
 - `http://proj-esp32.local/config/mqtt`
 
-`/api/status` reports Wi-Fi, IP, RSSI, MQTT state, TLS flag, uptime and free heap.
+The Web OTA upload endpoint is a development/lab interface and must not be exposed to untrusted networks.
 
 ## MQTT / RabbitMQ baseline — validated end-to-end
 
-The device now uses **PubSubClient** instead of `256dpi/arduino-mqtt`.
-
-Validated broker target:
-
-- service: CloudAMQP / RabbitMQ
-- hostname: `jackal.rmq.cloudamqp.com`
-- MQTT/TLS port: `8883`
-- transport: `WiFiClientSecure`
-- current development TLS mode: encrypted but certificate verification disabled with `setInsecure()`
-
-Do **not** commit the broker password, full credential URL, Wi-Fi password or other secrets. MQTT configuration is stored in ESP32 NVS through `/config/mqtt`.
-
-Topic root:
-
-`lab/proj-esp32`
-
-Current device topics:
-
-```text
-lab/proj-esp32/10A2CCEF49C0/state
-lab/proj-esp32/10A2CCEF49C0/telemetry
-lab/proj-esp32/10A2CCEF49C0/events
-lab/proj-esp32/10A2CCEF49C0/cmd
-```
+The device uses `PubSubClient` with `WiFiClientSecure`.
 
 Validated behavior:
 
-- authenticated MQTT/TLS session appears in RabbitMQ dashboard
-- ESP32 subscribes to `/cmd`
-- ESP32 publishes retained online state on `/state`
-- telemetry is published about every 10 seconds
-- notebook published `ping` to `/cmd`
-- WebSerial showed `MQTT RX .../cmd => ping`
-- ESP32 replied with status JSON on `/events`
-- notebook subscriber received the `/events` response
+- authenticated MQTT/TLS session visible in RabbitMQ/CloudAMQP;
+- subscribe on `lab/proj-esp32/<device-id>/cmd`;
+- retained online state on `/state`;
+- periodic `/telemetry`;
+- `ping` command received on `/cmd` and response published on `/events`;
+- configuration persisted in NVS and survived multiple OTA transitions plus a bootloader rollback.
 
-This validates the complete cloud round-trip:
+Current development TLS mode is encrypted but certificate verification is disabled with `setInsecure()`. Replacing this with proper CA validation is still pending.
 
-```text
-notebook -> MQTT/TLS -> CloudAMQP/RabbitMQ -> ESP32
-ESP32    -> MQTT/TLS -> CloudAMQP/RabbitMQ -> notebook
+Do not commit broker passwords, Wi-Fi passwords or other secrets.
+
+## OTA A/B — validated through rollback
+
+The project uses native ESP-IDF/bootloader A/B OTA semantics, not custom slot switching.
+
+### Important Arduino-ESP32 hook
+
+Arduino-ESP32 2.0.17 provides weak hooks `verifyOta()` and `verifyRollbackLater()`. The framework default would validate a `PENDING_VERIFY` image during `initArduino()` before application `setup()`.
+
+The project therefore contains:
+
+```cpp
+extern "C" bool verifyRollbackLater() {
+    return true;
+}
 ```
 
-See `docs/mqtt.md` for reproducible smoke-test commands.
+in `src/ota_hooks.cpp`. Do not remove this without redesigning the OTA validation lifecycle.
 
-### MQTT migration incident worth remembering
+### Healthy validation proof
 
-`256dpi/arduino-mqtt`/lwmqtt repeatedly reached TLS successfully but failed the MQTT handshake with `err=-9 rc=6`. A manual preconnected `WiFiClientSecure` socket did not fix it.
+Physical-device test proved:
 
-The project was migrated to PubSubClient. PubSubClient initially returned `state=4` (bad credentials); re-saving the correct MQTT password in ESP32 NVS fixed authentication immediately. PubSubClient is the validated MQTT client for the current baseline.
+```text
+0.1.2 / app0 / VALID
+        -> OTA
+0.1.3 / app1 / PENDING_VERIFY
+        -> application health window
+0.1.3 / app1 / VALID
+```
+
+`PENDING_VERIFY` was observable for several seconds before the application called `esp_ota_mark_app_valid_cancel_rollback()`.
+
+### Controlled rollback proof
+
+A dedicated PlatformIO profile exists:
+
+`nodemcu-32s-rollback-test`
+
+It builds approximately:
+
+- version: `0.1.4-rollback-test`
+- build: `5`
+- compile flag: `PROJ_OTA_TEST_FORCE_VALIDATION_FAILURE=1`
+
+Physical-device test proved:
+
+```text
+0.1.3 build 4 / app1 / VALID
+        -> Web OTA to app0
+0.1.4-rollback-test build 5 / app0 / PENDING_VERIFY
+        -> forced local validation failure
+        -> esp_ota_mark_app_invalid_rollback_and_reboot()
+        -> bootloader rollback
+0.1.3 build 4 / app1 / VALID / ONLINE
+```
+
+After rollback, Wi-Fi and MQTT/TLS reconnected and NVS-backed MQTT configuration remained present. See `docs/ota-test-log.md` for the exact evidence.
+
+## Firmware signing — host side validated
+
+A local ECDSA P-256 signing keypair exists on `kpnote` outside the Git repository.
+
+Rules:
+
+- private key stays outside Git and has owner-only permissions;
+- public key is committed under `keys/update-signing-public.pem`;
+- `scripts/release_manifest.py` creates a deterministic manifest and signature;
+- OpenSSL verification on the build host has been smoke-tested;
+- the ESP32 does **not yet** enforce signed-package verification before Web OTA installation.
+
+The next security milestone is on-device package verification before a candidate can be written/accepted.
 
 ## Serial observation rule
 
@@ -160,11 +223,9 @@ Use:
 .venv-platformio/bin/python scripts/capture_serial.py --seconds 10
 ```
 
-The helper configures DTR/RTS before opening the port.
-
 ## Aurora control plane
 
-Aurora jobs are submitted as strict JSON in issues in `kernelpanic2015/aurora-kpnote`, then labeled `aurora:queued`.
+Create strict JSON issues in `kernelpanic2015/aurora-kpnote` with label `aurora:queued`:
 
 ```json
 {
@@ -176,7 +237,17 @@ Aurora jobs are submitted as strict JSON in issues in `kernelpanic2015/aurora-kp
 }
 ```
 
-Aurora Watch is read-only. For important diagnostics, capture stdout/stderr and post the result back to the issue with `gh issue comment ... --body-file ...`.
+Do not treat Issue creation as execution success. Wait for the real Aurora job UUID and observe it through Aurora Watch until `completed` or `failed`.
+
+Public Watch fallback, when needed:
+
+```text
+https://jobs.dellasale.com/api/watch/jobs
+https://jobs.dellasale.com/api/watch/jobs/{jobId}
+https://jobs.dellasale.com/api/watch/jobs/{jobId}/events
+```
+
+The `jobId` is the Aurora UUID, not the GitHub Issue number.
 
 ## PlatformIO environment
 
@@ -192,27 +263,12 @@ Common commands:
 
 ```bash
 ./scripts/pio run
+./scripts/pio run -e nodemcu-32s-rollback-test
 ./scripts/pio run -t upload --upload-port /dev/ttyUSB0
-./scripts/pio run -t erase --upload-port /dev/ttyUSB0
 ./scripts/pio device list
 ```
 
-## Active firmware architecture
-
-High-level FSM:
-
-`BOOT -> CONFIG_PORTAL | WIFI_CONNECTING -> ONLINE | OFFLINE`
-
-Current services:
-
-- WiFiManager provisioning portal
-- mDNS `proj-esp32.local`
-- async HTTP server
-- `/`, `/api/status`, `/config/mqtt`
-- `/webserial`
-- ArduinoOTA
-- Preferences/NVS MQTT configuration
-- PubSubClient over WiFiClient/WiFiClientSecure
+Do not erase flash unless explicitly required.
 
 ## GPIO rules already adopted
 
@@ -224,22 +280,34 @@ Current services:
 - default I2C: GPIO21 SDA, GPIO22 SCL
 - VSPI starting point: GPIO18 SCK, GPIO19 MISO, GPIO23 MOSI
 
-See `include/board_pins.h` and `docs/hardware.md`.
+Do not lock TFT/touch/SD chip-select or other display GPIOs until the physical module pinout is confirmed.
 
-## TFT/touch phase still pending
+## Architectural direction
 
-Historical clues for the user's TFT/touch hardware:
+The firmware base must remain autonomous and fault-tolerant:
 
-- `TFT_eSPI`
-- `XPT2046_Touchscreen`
-- likely ILI9488 / ILI9486 / ILI9341 display controller family
-
-Do not assume display controller or TFT CS/DC/RST/touch pins until the module is identified.
+- network/cloud manage and observe; local firmware controls;
+- configured rules/schedules must continue without Internet or MQTT;
+- sensor/actuator failures are isolated by component rather than stopping the whole device;
+- multiple FSMs cooperate without blocking;
+- future components expose standard state/health metadata to TFT, Preact, MQTT and APIs;
+- internal flash holds firmware A/B, NVS and LittleFS recovery assets;
+- microSD will hold the compiled Preact frontend, logs, data and larger UI assets.
 
 ## Immediate next steps
 
-1. harden MQTT: LWT/offline retained state and reconnect backoff/jitter;
-2. replace development `setInsecure()` with CA certificate validation and time synchronization if needed;
-3. consider extracting MQTT behavior from `main.cpp` into a local `MQTTService` inspired by `kernelpanic2015/MQTT-LIB`, while keeping reconnect nonblocking;
-4. validate OTA over Wi-Fi;
-5. begin TFT + XPT2046 bring-up only after the networking baseline remains stable.
+1. add on-device verification of signed update metadata/package before accepting firmware;
+2. then add signed remote manifest download and common update triggers for Web, MQTT and automatic checks;
+3. replace MQTT `setInsecure()` with CA validation;
+4. harden MQTT with LWT and reconnect backoff/jitter;
+5. continue modular runtime (`ComponentRegistry`, health model, Supervisor, local rules/scheduler);
+6. mount LittleFS and add minimal recovery UI;
+7. proceed to TFT/touch/microSD bring-up only after pinout confirmation.
+
+## Source-of-truth invariant
+
+After every validated change:
+
+```text
+/home/kernelpanic/Projects/proj-esp32 main == origin/main
+```
