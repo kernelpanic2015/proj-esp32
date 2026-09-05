@@ -27,6 +27,8 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 ## Validated baseline — 2026-09-05
 
+**Stage 6C physical baseline:** `0.1.20/build 21`, `app1`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, `Supervisor=RUNNING/OK`, Wi-Fi + MQTT/TLS connected, EventBus `dropped=0`. Stage 6D is next.
+
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 
 ```text

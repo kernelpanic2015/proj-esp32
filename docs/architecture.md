@@ -276,3 +276,10 @@ Stage 6C includes a lab-only MQTT disconnect endpoint in the already test-gated 
 
 
 Stage 6C proof-note: the first signed lab image physically validated Supervisor `RUNNING/OK`, but the controlled MQTT-disconnect route was missing due to an integration patch mismatch. The proof was stopped without simulating success; the route and `/api/status.supervisor` embedding were corrected and the retry uses fresh monotonic builds.
+
+
+### Stage 6C physical proof and closure
+
+Stage 6C is physically validated. A real MQTT disconnect with Wi-Fi/HTTP preserved caused `connectivity=ONLINE/OK -> WIFI_ONLY/DEGRADED` (`mqtt_disconnected`) and Supervisor `RUNNING/OK -> DEGRADED`. After reconnect both recovered to `ONLINE/OK` and `RUNNING/OK`; EventBus dropped count stayed zero. A clean `0.1.20/build 21` image was then installed on `app1`, reached `VALID`, and did not expose the test-only disconnect endpoint.
+
+This validates the ownership boundary: Supervisor observes aggregate health but does not own transport recovery or local functional control. Stage 6D may migrate MQTT reconnect and telemetry timing to TaskScheduler without changing this contract.

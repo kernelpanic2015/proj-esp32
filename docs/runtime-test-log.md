@@ -56,3 +56,18 @@ Physical acceptance still pending at this checkpoint: signed OTA into the contro
 - The planned controlled MQTT interruption could not run because the lab-only `/api/test/mqtt/disconnect` route had not actually been inserted into `main.cpp`; the endpoint returned HTTP 404.
 - No production fault occurred. The device remained `ONLINE` with MQTT/TLS connected.
 - The source was corrected before retrying the degradation/recovery proof, and test build numbers were advanced so monotonic OTA ordering remains valid.
+
+
+### Stage 6C physical result — PASS
+
+- Signed lab image `0.1.19-remote-test/build 20` installed on `app0` and completed native `PENDING_VERIFY -> VALID`.
+- Before fault injection, `/api/supervisor` reported `RUNNING/OK` and `connectivity` reported `ONLINE/OK`.
+- A real MQTT disconnect was triggered while Wi-Fi and HTTP remained available; reconnect was suppressed for 8 s only in the test-gated image.
+- During the interruption, `connectivity` became `WIFI_ONLY/DEGRADED` with `fault_code=mqtt_disconnected`, while the application remained `ONLINE`; Supervisor became `DEGRADED/DEGRADED`.
+- After MQTT reconnect, `connectivity` returned to `ONLINE/OK` and Supervisor returned to `RUNNING/OK`.
+- EventBus remained `dropped=0` throughout the proof.
+- Clean target `0.1.20/build 21` installed on `app1`, completed `PENDING_VERIFY -> VALID`, returned ONLINE with Wi-Fi + MQTT/TLS, and the lab-only disconnect endpoint returned HTTP 404.
+- `0.1.20/build 21` is the promoted canonical baseline.
+- The proof wrapper issue was labelled failed after the script had already completed, but the captured assertions ended `STAGE6C_PHYSICAL_PROOF_OK`; closure is based on the physical assertions and final clean-device state.
+
+**Stage 6C: VALIDATED. Stage 6D is next.**

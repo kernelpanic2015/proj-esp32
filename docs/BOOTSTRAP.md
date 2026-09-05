@@ -40,31 +40,30 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after the Stage 6B ComponentRegistry physical proof:
+Current physical device state after Stage 6C Supervisor FSM closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.17`
-- build: `18`
+- firmware: `0.1.20`
+- build: `21`
 - channel: `dev`
-- running partition: `app0`
-- boot partition: `app0`
-- next update partition: `app1`
+- running partition: `app1`
+- boot partition: `app1`
+- next update partition: `app0`
 - native OTA image state: `VALID`
-- system/FSM: `ONLINE`
+- application FSM/system: `ONLINE`
 - Wi-Fi: connected
 - MQTT/TLS: connected
+- `connectivity`: `ONLINE/OK`
+- Supervisor: `RUNNING/OK`
+- EventBus dropped count: `0`
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 
-`arkhipenko/TaskScheduler` 4.0.8 is now adopted alongside `jonblack/arduino-fsm`. TaskScheduler owns **when work is eligible**; FSM owns **state and behavior**. Tasks are expected to remain disabled until work is meaningful, and delayed enable/restart is the preferred mechanism for warm-up, settling, retry/backoff and minimum on/off timing.
+TaskScheduler owns timing/eligibility; FSMs own state/behavior; components own subsystem interpretation; EventBus owns transition delivery; Supervisor aggregates only registry health. Stage 6C proved a real MQTT loss can degrade connectivity/Supervisor without taking local application control offline, then recover automatically. The clean `0.1.20/build 21` image removed the test endpoint and remained `VALID`.
 
-The first migrated production path is the automatic firmware check. Physical proof showed persisted policy -> delayed TaskScheduler activation -> automatic signed remote check after reboot, with no manual/MQTT check command and no automatic apply. Final `0.1.17/build 18` remained ONLINE and `VALID`.
-
-Stage 6B physically validates the first real registered component, `connectivity`: TaskScheduler owns its sampling cadence, the component owns state/health, transitions use EventBus, and `/api/components` plus `/api/status` expose the common model.
-
-Latest normal build remains within the 1728 KiB OTA slot at about 68.8% flash and 16.6% static RAM.
+Normal build remains within the 1728 KiB OTA slot with roughly 17% static RAM and 69% flash usage.
 
 ## Flash layout — validated
 
@@ -299,12 +298,12 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. add the Stage 6 `Supervisor` FSM over the validated `ComponentRegistry` / `ComponentHealth` / `EventBus` foundation;
-2. migrate MQTT reconnect/telemetry timing to TaskScheduler incrementally without changing network behavior;
-3. add more real components only when ownership boundaries are clear;
-4. replace development `setInsecure()` with CA validation for MQTT and remote HTTPS;
-5. harden MQTT with LWT plus reconnect backoff/jitter;
-6. continue toward ConfigurationStore/RuleEngine/local Scheduler and later DS3231/TFT/touch/microSD.
+1. **Stage 6D:** migrate MQTT reconnect timing to TaskScheduler with explicit retry/backoff eligibility while preserving current connection behavior and local autonomy.
+2. Migrate periodic MQTT telemetry heartbeat timing to TaskScheduler and prove no regression in broker round-trip/status payloads.
+3. Keep network loss as `DEGRADED`, never as a prerequisite for local control.
+4. Replace development `setInsecure()` with CA validation for MQTT and remote HTTPS.
+5. Add MQTT LWT/retained offline state and reconnect backoff/jitter after the scheduler migration is stable.
+6. Continue toward ConfigurationStore/RuleEngine/local Scheduler, then DS3231/TFT/touch/microSD.
 
 ## Source-of-truth invariant
 
@@ -314,12 +313,6 @@ After every validated change:
 /home/kernelpanic/Projects/proj-esp32 main == origin/main
 ```
 
+## Stage 6C closure
 
-## Stage 6C implementation checkpoint
-
-The Supervisor FSM is implemented as a real `arduino-fsm` machine and scheduled cooperatively by TaskScheduler. It aggregates only `ComponentRegistry` health, publishes state changes through EventBus, exposes `/api/supervisor`, and is embedded in `/api/status`/MQTT telemetry. The next safe action is the controlled signed physical proof: lab test image -> real MQTT disconnect -> Supervisor `RUNNING -> DEGRADED -> RUNNING` -> clean target image with the test endpoint absent.
-
-
-## Stage 6C live lab state after first proof attempt
-
-Canonical source baseline remains `0.1.17/build 18`, but the physical ESP32 is temporarily running the signed lab image `0.1.18-remote-test/build 19` on `app1`, native state `VALID`, `ONLINE` with MQTT/TLS connected. Supervisor is physically active and reports `RUNNING/OK`. The first degradation test stopped safely because the intended test-only MQTT disconnect endpoint returned 404; source is corrected and the retry uses higher monotonic builds.
+Stage 6C is validated. The physical baseline is `0.1.20/build 21` on `app1`, native image `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, `Supervisor=RUNNING/OK`, MQTT/TLS connected and EventBus `dropped=0`. The controlled proof observed `RUNNING -> DEGRADED -> RUNNING` during a real MQTT interruption while Wi-Fi/HTTP remained available. Proceed with Stage 6D; do not repeat Stage 6C unless the shared health/Supervisor contract changes.

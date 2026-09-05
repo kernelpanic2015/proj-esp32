@@ -149,7 +149,7 @@ The ESP32 fetches the signed manifest and firmware directly over HTTPS.
 
 Automatic policy compares remote and local monotonic build numbers at a configured interval. A failed update does not disable normal local control.
 
-## Stage 6 — Core modular runtime [in progress]
+## Stage 6 — Core modular runtime [in progress — Stage 6C validated, Stage 6D next]
 
 Introduce:
 
@@ -164,10 +164,12 @@ Introduce:
 - [x] generic registry serialization exposed at `/api/components` and embedded in `/api/status`/MQTT telemetry;
 - [x] route component state/health transitions through the bounded `EventBus`;
 - [x] `Supervisor` FSM implementation: TaskScheduler-driven health aggregation over ComponentRegistry with RUNNING/DEGRADED/FAULT states;
-- [ ] physical proof of Supervisor `RUNNING -> DEGRADED -> RUNNING` through a controlled real MQTT transport interruption;
-- [ ] migrate additional periodic/retry work to TaskScheduler where it improves consistency (MQTT reconnect, telemetry, future sensors/actuators).
+- [x] physical proof of Supervisor `RUNNING -> DEGRADED -> RUNNING` through a controlled real MQTT transport interruption;
+- [ ] **Stage 6D** — migrate additional periodic/retry work to TaskScheduler where it improves consistency, starting with MQTT reconnect and telemetry without changing network behavior.
 
 Rule: drivers know hardware; components know behavior; services know communication; supervisor knows only state/health.
+
+Stage 6C is physically validated on `0.1.20/build 21`: a real MQTT interruption kept Wi-Fi/HTTP and the application FSM online, moved `connectivity` to `WIFI_ONLY/DEGRADED` and Supervisor to `DEGRADED`, then recovered both to `ONLINE/OK` and `RUNNING/OK`. EventBus dropped count remained zero.
 
 ## Stage 7 — Persistent configuration and local rule engine
 
