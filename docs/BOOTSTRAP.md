@@ -1,4 +1,5 @@
 # proj-esp32 — bootstrap / handoff
+> **CORE FOUNDATION HANDOFF:** Read `docs/CORE_BASELINE.md` first. Stages 0-7 are the closed reusable Core. A new chat may start a different application/fork; RTC/TFT/touch/SD is not a mandatory next stage.
 
 Use this file to resume the project in a new ChatGPT conversation without reconstructing the environment from memory.
 

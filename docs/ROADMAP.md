@@ -1,4 +1,5 @@
 # proj-esp32 development roadmap
+> **CORE FOUNDATION BOUNDARY:** Stages 0-7 are the completed reusable Core. Sections after Stage 7 are historical/reference application tracks, not a mandatory sequence for every fork.
 
 This roadmap turns the agreed base architecture into incremental, testable stages. The guiding rule is: **the cloud manages; the device controls**. Once configured, local automation must continue without Wi-Fi, Internet, MQTT, web UI or an external agent.
 

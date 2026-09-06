@@ -1,4 +1,5 @@
 # Firmware architecture
+> **CORE FOUNDATION BOUNDARY:** Stages 0-7 define the reusable platform contracts. Applications own external modules, GPIO assignments and domain behavior; Core `main` remains generic and telemetry-driven.
 
 ## Goals
 
