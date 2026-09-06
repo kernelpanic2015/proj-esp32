@@ -968,7 +968,7 @@ void startNetworkServices() {
     request->send(200, "application/json", json);
   });
 
-  server.on("/api/test/rules/input/delayed", HTTP_POST, [](AsyncWebServerRequest* request) {
+  server.on("/api/test/rules/queue-input", HTTP_POST, [](AsyncWebServerRequest* request) {
     if (!request->hasParam("value", true) || !request->hasParam("delay_ms", true)) {
       request->send(400, "application/json", "{\"error\":\"value_and_delay_required\"}");
       return;

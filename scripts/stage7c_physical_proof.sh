@@ -87,8 +87,8 @@ wait_completed() {
 echo '=== PRECHECK CLEAN 7B ===' >> "$OUT"
 S=$(get_status)
 echo "PRE_STATUS=$S" >> "$OUT"
-echo "$S" | grep -Fq '"version":"0.1.31"'
-echo "$S" | grep -Fq '"build":32'
+echo "$S" | grep -Fq '"version":"0.1.35"'
+echo "$S" | grep -Fq '"build":36'
 echo "$S" | grep -Fq '"running_partition":"app0"'
 echo "$S" | grep -Fq '"image_state":"VALID"'
 echo "$S" | grep -Fq '"wifi":true'
@@ -100,17 +100,17 @@ mkdir -p "$LAB" "$TARGET"
 python3 scripts/release_manifest.py \
   --firmware .pio/build/nodemcu-32s-remote-update-test/firmware.bin \
   --output "$LAB" --model proj-esp32-35 --hardware-revision 1 \
-  --version 0.1.32-remote-test --build 33 --channel dev \
+  --version 0.1.34-remote-test --build 35 --channel dev \
   --private-key "$PRIV" --public-key "$PUB" >/tmp/stage7c-lab-manifest.log
 python3 scripts/release_manifest.py \
   --firmware .pio/build/nodemcu-32s-remote-target-test/firmware.bin \
   --output "$TARGET" --model proj-esp32-35 --hardware-revision 1 \
-  --version 0.1.33 --build 34 --channel dev \
+  --version 0.1.35 --build 36 --channel dev \
   --private-key "$PRIV" --public-key "$PUB" >/tmp/stage7c-target-manifest.log
 
 echo '=== INSTALL LAB 7C ===' >> "$OUT"
 install_package "$LAB"
-wait_transition '0.1.32-remote-test' 33 app1
+wait_transition '0.1.34-remote-test' 35 app1
 S=$(get_status)
 R=$(get_rule_runtime)
 T=$(get_lab_runtime)
@@ -136,7 +136,7 @@ echo "$R" | grep -Fq '"work_task_enabled":false'
 echo "$R" | grep -Fq '"completed_count":0'
 
 echo '=== OFFLINE LOCAL EVENT PROOF ===' >> "$OUT"
-CODE=$(post_form '/api/test/rules/input/delayed' /tmp/stage7c-delayed.json \
+CODE=$(post_form '/api/test/rules/queue-input' /tmp/stage7c-delayed.json \
   --data-urlencode value=15 --data-urlencode delay_ms=3000)
 echo "DELAYED_INPUT_HTTP=$CODE $(cat /tmp/stage7c-delayed.json)" >> "$OUT"
 test "$CODE" = 202
@@ -204,7 +204,7 @@ echo "$COMPS" | grep -Fq '"dropped":0'
 
 echo '=== INSTALL CLEAN TARGET 7C ===' >> "$OUT"
 install_package "$TARGET"
-wait_transition '0.1.33' 34 app0
+wait_transition '0.1.35' 36 app0
 S=$(get_status)
 R=$(get_rule_runtime)
 E=$(curl -fsS --max-time 5 "$BASE_URL/api/rules/status")
@@ -219,8 +219,8 @@ echo "FINAL_CONFIG=$C" >> "$OUT"
 echo "FINAL_SUPERVISOR=$SUP" >> "$OUT"
 echo "FINAL_COMPONENTS=$COMPS" >> "$OUT"
 echo "FINAL_LAB_ENDPOINT_HTTP=$CODE" >> "$OUT"
-echo "$S" | grep -Fq '"version":"0.1.33"'
-echo "$S" | grep -Fq '"build":34'
+echo "$S" | grep -Fq '"version":"0.1.35"'
+echo "$S" | grep -Fq '"build":36'
 echo "$S" | grep -Fq '"running_partition":"app0"'
 echo "$S" | grep -Fq '"image_state":"VALID"'
 echo "$S" | grep -Fq '"wifi":true'
