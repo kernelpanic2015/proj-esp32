@@ -29,7 +29,7 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 **Current physical baseline:** `0.1.37/build 38`, `app0`, native OTA `VALID`, application `ONLINE`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. ConfigurationStore is revision 6 with persisted rule `persisted.demo.a`; RuleEngine is configured/enabled and RuleRuntime is `ARMED`, while its work task remains disabled until input exists. Lab mutation endpoints are absent.
 
-**Stages 7A-7D are validated:** transactional configuration, hysteresis semantics, one-shot local execution and persisted rule lifecycle have all been physically proven. Apply/reboot/replacement/rollback/clean-OTA preserve the local rule source of truth. **Stage 7E is next:** persisted local schedules and delayed actions above TaskScheduler.
+**Stages 7A-7D are validated. Stage 7E is in progress:** a persisted relative delayed-action service now sits above TaskScheduler. Its FSM owns schedule meaning/state, TaskScheduler owns only due-time execution, and the work task is disabled except while a valid action is waiting. Wall-clock schedules remain deferred until the DS3231 time foundation.
 
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 

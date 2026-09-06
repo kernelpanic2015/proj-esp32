@@ -422,3 +422,16 @@ revision locally, preserving the rule that cloud/network manages but local firmw
 The persisted ownership boundary is now proven across apply, reboot, replacement, rollback and clean OTA. ConfigurationStore remains responsible only for durable transactional bytes/revisions. `PersistedRuleLoader` owns semantic translation/validation and activation. RuleEngine owns functional hysteresis decisions. RuleRuntime owns `DISABLED/ARMED/EVALUATING` runtime state and one-shot scheduling. VirtualActuatorComponent owns desired-state application; no GPIO is accessed.
 
 The clean baseline intentionally keeps the persisted rule armed while its input is unavailable. This is not a polling loop: `ARMED` expresses eligibility, while the TaskScheduler work task remains disabled until an input event makes evaluation meaningful. Stage 7E extends the same distinction to persisted schedules and delayed actions.
+
+
+## Stage 7E local schedule boundary
+
+`LocalScheduleService` translates persisted schedule semantics into one-shot
+TaskScheduler work. The schedule FSM owns meaning/state; TaskScheduler owns only when
+the due callback runs; the target component owns application of desired state. A
+waiting schedule has one enabled delayed task, a completed/disabled schedule has no
+work task, and network state is not part of eligibility.
+
+Until DS3231 is validated, Stage 7E uses relative `delay_after_activation` semantics.
+Reboot intentionally re-arms the relative delay from boot-time activation. Wall-clock
+schedules are a Stage 8 time-service concern, not something synthesized from uptime.

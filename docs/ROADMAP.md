@@ -188,7 +188,7 @@ Core services:
 - [x] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; semantic and physical behavior validated;
 - [x] **Stage 7C** — TaskScheduler/EventBus-driven one-shot RuleRuntime physically validated, including real offline execution;
 - [x] **Stage 7D** — persisted rule binding to RuleEngine/RuleRuntime with boot/apply/rollback lifecycle physically validated;
-- [ ] **Stage 7E** — local `Scheduler` for schedules/delayed actions/settling windows;
+- [~] **Stage 7E** — local persisted delayed-action service above TaskScheduler; physical offline/reboot proof pending;
 - [ ] dependency/fault policies for actuators.
 
 Stage 7A stores rule/schedule envelopes but does not execute them yet. Rule semantics become active only after the RuleEngine validator/evaluator is introduced.

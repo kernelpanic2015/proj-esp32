@@ -372,7 +372,7 @@ bool apply(const String& candidateJson, String& error) {
   return true;
 }
 
-void setRuleLifecycleCallbacks(ValidateActiveCallback validator, ActivatedCallback activated) {
+void setLifecycleCallbacks(ValidateActiveCallback validator, ActivatedCallback activated) {
   ConfigLock lock;
   if (!lock.locked()) return;
   ruleValidator = validator;

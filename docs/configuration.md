@@ -270,3 +270,37 @@ An intentional reboot then loaded revision 4 automatically before network-depend
 Finally clean `0.1.37/build 38` installed on `app0`, reached `PENDING_VERIFY -> VALID`, retained configuration revision 6 and automatically loaded `persisted.demo.a`. RuleRuntime is `ARMED`, but `work_task_enabled=false` and `pending=false` because the clean virtual input has no value. Supervisor is `RUNNING/OK`, EventBus is `dropped=0`, Wi-Fi + MQTT/TLS are healthy, remote update is HTTPS-only, and the Stage 7D mutation/test endpoint returns HTTP 404.
 
 The physical proof was reconciled in Aurora issue #765 with marker `STAGE7D_PHYSICAL_PROOF_OK`. The earlier wrapper #764 reached every final assertion and installed the clean image but returned failure because a shell `pipefail`/`grep -q` assertion path was brittle against the large status payload; #765 rechecked the recorded intermediate proof plus live final state with JSON parsing and exited 0.
+
+
+## Stage 7E — local delayed-action schedule
+
+Stage 7E introduces schedule semantics **above** TaskScheduler. TaskScheduler remains a
+cooperative timing primitive; `LocalScheduleService` owns the persisted meaning and its
+FSM owns `DISABLED -> WAITING -> FIRING -> COMPLETED/FAULT`.
+
+The first deliberately narrow schedule schema is:
+
+```json
+{
+  "id": "demo.delay.on",
+  "type": "delay_after_activation",
+  "enabled": true,
+  "target": "virtual.schedule_output",
+  "desired_on": true,
+  "delay_ms": 4000
+}
+```
+
+Only zero or one schedule is supported in Stage 7E. The work task is `TASK_ONCE` and is
+enabled only while a valid enabled schedule is waiting to fire. After completion it is
+disabled automatically. Removing/disabling the schedule cancels pending work.
+
+This stage intentionally uses **relative runtime time**, not wall-clock time. Without a
+validated RTC, a persisted delay starts again when its configuration is activated at
+boot/apply/rollback. Calendar/cron semantics remain deferred until the DS3231 time
+foundation in Stage 8. This avoids pretending that `millis()` is durable civil time.
+
+The first target is a dedicated software-only `virtual.schedule_output`; no GPIO is
+touched. `GET /api/schedules/status` exposes state, loaded revision, task enable state,
+counters and the active schedule. ConfigurationStore semantic validation invokes both
+the persisted-rule and persisted-schedule validators before committing a candidate.

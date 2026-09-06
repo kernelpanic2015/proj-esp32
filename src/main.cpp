@@ -33,6 +33,7 @@
 #include "rules/rule_engine.h"
 #include "rules/rule_runtime.h"
 #include "rules/persisted_rule_loader.h"
+#include "schedules/local_schedule_service.h"
 #include "components/virtual_input_component.h"
 #include "components/virtual_actuator_component.h"
 
@@ -67,6 +68,7 @@ RuntimeCore::Supervisor runtimeSupervisor(runtimeComponents, runtimeEvents);
 Rules::RuleEngine ruleEngine(runtimeEvents);
 Components::VirtualInputComponent virtualTemperature(runtimeEvents, "virtual.temperature");
 Components::VirtualActuatorComponent virtualHeater(runtimeEvents, "virtual.heater");
+Components::VirtualActuatorComponent virtualScheduleOutput(runtimeEvents, "virtual.schedule_output");
 
 bool ruleInputReady();
 float ruleInputValue();
@@ -76,6 +78,8 @@ Rules::RuleRuntime ruleRuntime(cooperativeScheduler, runtimeEvents, ruleEngine,
                                "virtual.temperature", ruleInputReady, ruleInputValue,
                                ruleOutputState, ruleApplyDesired);
 Rules::PersistedRuleLoader persistedRuleLoader(ruleEngine, ruleRuntime);
+bool scheduleApplyDesired(bool desiredOn);
+Schedules::LocalScheduleService localScheduleService(cooperativeScheduler, scheduleApplyDesired);
 
 bool mqttConfigured();
 bool runtimeWifiConnected();
@@ -290,14 +294,24 @@ float ruleInputValue() { return virtualTemperature.value(); }
 bool ruleOutputState() { return virtualHeater.isOn(); }
 bool ruleApplyDesired(bool desiredOn) { return virtualHeater.applyDesired(desiredOn); }
 
-bool validatePersistedRules(const String& raw, String& error) {
-  return persistedRuleLoader.validateDocument(raw, error);
+bool scheduleApplyDesired(bool desiredOn) {
+  return virtualScheduleOutput.applyDesired(desiredOn);
 }
 
-void activatePersistedRules(uint32_t revision, const String& raw) {
+bool validatePersistedConfiguration(const String& raw, String& error) {
+  if (!persistedRuleLoader.validateDocument(raw, error)) return false;
+  if (!localScheduleService.validateDocument(raw, error)) return false;
+  return true;
+}
+
+void activatePersistedConfiguration(uint32_t revision, const String& raw) {
   String error;
   if (!persistedRuleLoader.activateDocument(raw, revision, error)) {
     logLine("PERSISTED_RULE_RELOAD_FAILED " + error);
+  }
+  error = "";
+  if (!localScheduleService.activateDocument(raw, revision, error)) {
+    logLine("LOCAL_SCHEDULE_RELOAD_FAILED " + error);
   }
 }
 
@@ -359,6 +373,7 @@ String statusJson() {
   json += "\"rule_engine\":" + ruleEngine.statusJson() + ",";
   json += "\"rule_runtime\":" + ruleRuntime.statusJson() + ",";
   json += "\"persisted_rules\":" + persistedRuleLoader.statusJson() + ",";
+  json += "\"local_schedule\":" + localScheduleService.statusJson() + ",";
   json += "\"components\":" + runtimeComponents.statusJson() + ",";
   json += "\"supervisor\":" + runtimeSupervisor.statusJson() + ",";
   json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
@@ -752,6 +767,7 @@ void startNetworkServices() {
     body += "rules_status=/api/rules/status\n";
     body += "rules_runtime=/api/rules/runtime\n";
     body += "persisted_rules=/api/rules/persisted\n";
+    body += "schedule_status=/api/schedules/status\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
     body += "wifi_runtime=/api/wifi/runtime\n";
@@ -779,6 +795,10 @@ void startNetworkServices() {
 
   server.on("/api/rules/persisted", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", persistedRuleLoader.statusJson());
+  });
+
+  server.on("/api/schedules/status", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", localScheduleService.statusJson());
   });
 
   server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -1044,13 +1064,22 @@ void setup() {
   runtimeComponents.add(connectivityComponent);
   runtimeComponents.add(virtualTemperature);
   runtimeComponents.add(virtualHeater);
+  runtimeComponents.add(virtualScheduleOutput);
   if (!runtimeComponents.beginAll()) {
     Serial.println("RUNTIME_COMPONENT_INIT_DEGRADED");
   }
   virtualHeater.enable(false);
-  ConfigurationStore::setRuleLifecycleCallbacks(validatePersistedRules, activatePersistedRules);
-  if (!persistedRuleLoader.begin()) {
+  virtualScheduleOutput.enable(false);
+  localScheduleService.begin();
+  ConfigurationStore::setLifecycleCallbacks(validatePersistedConfiguration, activatePersistedConfiguration);
+  String localActivationError;
+  const String activeConfiguration = ConfigurationStore::activeJson();
+  if (!persistedRuleLoader.activateDocument(activeConfiguration, ConfigurationStore::revision(), localActivationError)) {
     Serial.println("PERSISTED_RULE_LOAD_FAILED");
+  }
+  localActivationError = "";
+  if (!localScheduleService.activateDocument(activeConfiguration, ConfigurationStore::revision(), localActivationError)) {
+    Serial.println("LOCAL_SCHEDULE_LOAD_FAILED");
   }
   runtimeSupervisor.begin();
   connectivityHealthTask.enableDelayed(2000);
