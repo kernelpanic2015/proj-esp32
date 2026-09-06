@@ -119,9 +119,9 @@ GPIO dependency. The virtual actuator owns application of that desired state.
 write/evaluation endpoints exist only in the remote test image behind
 `PROJ_RULE_ENGINE_TEST_ENDPOINTS`.
 
-Stage 7B evaluation is intentionally explicit/manual. Stage 7C will connect the same
+Stage 7B evaluation was intentionally explicit/manual. Stage 7C connects the same
 engine to TaskScheduler + EventBus so the evaluation work task is disabled while no
-rule is active and input events can force an iteration. This keeps the distinction
+rule is active and input events can force an iteration. The distinction remains
 clear: Stage 7B proves rule semantics; Stage 7C proves runtime scheduling/state flow.
 
 
@@ -149,7 +149,7 @@ The enabled sequence produced exactly five evaluations. A disabled rule did not 
 
 During the lab proof the component registry contained `connectivity`, `virtual.temperature`, and `virtual.heater`; Supervisor remained `RUNNING/OK` and EventBus remained `dropped=0`. The clean `0.1.31/build 32` target then installed on `app0`, reached `VALID`, returned to HTTPS-only remote-update policy, retained ConfigurationStore revision 3, restored the normal registry to only `connectivity`, and returned HTTP 404 for `/api/test/rules/status`. The standard read-only `/api/rules/status` remained available with an unconfigured engine.
 
-Stage 7B intentionally stops at explicit/manual evaluation. Stage 7C adds TaskScheduler + EventBus runtime wiring; Stage 7D later binds persisted rule semantics to ConfigurationStore revisions.
+Stage 7B intentionally stops at explicit/manual evaluation. Stage 7C adds and physically validates TaskScheduler + EventBus runtime wiring; Stage 7D binds persisted rule semantics to ConfigurationStore revisions.
 
 
 ## Stage 7C — event-driven rule runtime
@@ -195,3 +195,27 @@ last request/run results.
 The controlled lab build also includes a delayed virtual-input endpoint. It exists only
 to prove that a locally scheduled sensor event can run while Wi-Fi and MQTT are absent;
 it is removed from the clean image.
+
+
+## Stage 7C physical validation
+
+Stage 7C was physically proven through the signed A/B path. Controlled
+`0.1.34-remote-test/build 35` ran the virtual temperature/heater rule with
+`RuleRuntime` event scheduling. A delayed local input (`15`) was queued, Wi-Fi was
+deliberately disconnected before the event fired, and HTTP was confirmed unavailable.
+When connectivity returned, runtime counters proved that exactly one local evaluation
+had completed during the outage (`scheduled_count=1`, `completed_count=1`,
+`last_run_result=TURN_ON`) and the virtual heater was ON.
+
+The online regression then produced `17 -> HOLD` and `19 -> TURN_OFF`. Disabling the
+rule left `scheduled_count` and `completed_count` unchanged while `rejected_count`
+increased on a new input, proving disabled rules do not consume evaluation work.
+The one-shot work task returned to disabled after every completed evaluation.
+
+Clean `0.1.35/build 36` was installed on `app0`, reached native `VALID`, restored
+HTTPS-only remote-update policy, preserved ConfigurationStore revision 3, returned the
+production component registry to only `connectivity`, left RuleEngine unconfigured and
+RuleRuntime `DISABLED`, and removed all Stage 7C lab endpoints (HTTP 404).
+
+**Stage 7C: VALIDATED. Stage 7D binds persisted validated rule documents/revisions to
+the RuleEngine/RuleRuntime lifecycle.**

@@ -360,7 +360,7 @@ Stage 7B builds above this store with virtual components first. RuleEngine produ
 The first RuleEngine is deliberately transport- and hardware-independent. A rule
 receives an input value plus current output state and returns a desired output state.
 It never writes GPIO. Controlled virtual components prove the path before real sensors
-or relays exist. Stage 7C will add TaskScheduler/EventBus-driven automatic evaluation;
+or relays exist. Stage 7C adds TaskScheduler/EventBus-driven one-shot automatic evaluation;
 Stage 7D will bind validated persisted rule documents to the engine lifecycle.
 
 
@@ -368,7 +368,7 @@ Stage 7D will bind validated persisted rule documents to the engine lifecycle.
 
 The virtual path was physically exercised on the device with thresholds 16/18. It preserved state inside the deadband, turned ON below the lower threshold, turned OFF above the upper threshold, rejected inverted thresholds, and ignored actuation when the rule was disabled. The controlled lab image registered virtual components only for the proof; the clean `0.1.31/build 32` image returned to the production registry with only `connectivity` and removed lab endpoints.
 
-This validates the ownership boundary before scheduling is introduced: **RuleEngine decides desired functional state; Component/FSM owns behavior; Driver owns hardware.** Stage 7C now adds only the timing/event layer: TaskScheduler determines when evaluation runs and EventBus may force a pending evaluation. No Stage 7C task should stay enabled when there is no active rule.
+This validates the ownership boundary: **RuleEngine decides desired functional state; Component/FSM owns behavior; Driver owns hardware.** Stage 7C adds only the timing/event layer: TaskScheduler determines when evaluation runs and EventBus may request a pending evaluation. The physical offline proof confirms no Stage 7C work task needs to stay enabled while an active rule is merely armed.
 
 
 ## Stage 7C RuleRuntime scheduling boundary
@@ -381,3 +381,28 @@ semantics and the actuator component owns application of desired state.
 A healthy armed rule therefore consumes no periodic evaluation task. Work appears only
 when an input event makes evaluation meaningful. This is the same platform rule used by
 sensor warm-up/retry work: tasks exist, but remain disabled until state makes them useful.
+
+
+### Stage 7C physical closure
+
+The scheduling boundary was proven on hardware, including a real connectivity outage.
+A delayed local input was queued, Wi-Fi/MQTT were removed before it fired, and HTTP
+became unreachable. The input still traversed the local EventBus and RuleRuntime,
+scheduled one TaskScheduler evaluation, and produced `TURN_ON`. After reconnect,
+runtime counters showed one scheduled and one completed evaluation with the work task
+disabled again. Subsequent `HOLD` and `TURN_OFF` decisions passed, and a disabled rule
+rejected new work without scheduling an evaluation.
+
+This confirms the platform ownership model under actual connectivity loss:
+
+```text
+connectivity failure -> Supervisor may degrade
+local input          -> EventBus
+EventBus             -> RuleRuntime eligibility
+RuleRuntime          -> one-shot TaskScheduler work
+RuleEngine           -> desired state
+Actuator component   -> owns application
+```
+
+External connectivity is therefore observability/management, not a prerequisite for
+the local rule-control path.

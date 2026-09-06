@@ -92,10 +92,10 @@ Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 
 - RuleEngine produces desired state only and never touches GPIO;
 - clean firmware exposes `GET /api/rules/status`;
 - controlled write/evaluation endpoints exist only in the lab build and are absent from the clean image;
-- clean physical baseline is `0.1.31/build 32`, `app0/VALID`;
+- clean physical baseline is `0.1.35/build 36`, `app0/VALID`;
 - ConfigurationStore remains revision 3; persisted rule binding is intentionally deferred to Stage 7D.
 
-**Stage 7C next:** TaskScheduler + EventBus runtime evaluation. The evaluation work task must be disabled when no rule is active, input events may force an evaluation, and rule/actuator state ownership remains in the engine/component FSM layer.
+**Stage 7C validated:** TaskScheduler + EventBus now drive one-shot RuleRuntime evaluation. A real Wi-Fi/MQTT outage proved a locally queued input still evaluated and actuated the virtual component; completed work returns the task to disabled, and disabled rules reject new scheduling. Clean baseline is `0.1.35/build 36`, `app0/VALID`, HTTPS-only, ConfigurationStore revision 3, RuleRuntime `DISABLED`, lab endpoints absent. **Stage 7D next:** bind persisted validated rule documents/revisions to RuleEngine/RuleRuntime lifecycle.
 
 ## Flash layout — validated
 
@@ -332,9 +332,9 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. Continue **Stage 7A**: the dual-slot transactional `ConfigurationStore` is implemented; physically prove apply/reboot/rollback persistence before starting RuleEngine execution.
-2. Introduce the first local `RuleEngine` path with TaskScheduler + FSM semantics and no dependency on Wi-Fi/MQTT/cloud.
-3. Add a local scheduling abstraction for rule evaluation and delayed/settling behavior; tasks remain disabled until work is meaningful.
+1. Start **Stage 7D**: bind validated persisted rule documents and ConfigurationStore revisions to RuleEngine/RuleRuntime lifecycle.
+2. Preserve the Stage 7C invariant: RuleRuntime work tasks remain disabled until an event makes evaluation meaningful; connectivity is never required for local rule execution.
+3. Then add the local schedule/delayed-action layer for schedules, settling windows and future actuator timing.
 4. Keep the cross-cutting network-hardening backlog: replace `setInsecure()` with CA validation, then add MQTT LWT and backoff/jitter.
 5. Continue opportunistic TaskScheduler + FSM migration only when touching a subsystem or when it materially reduces custom timing/recovery code.
 
@@ -349,3 +349,15 @@ After every validated change:
 ## Stage 6 core closure
 
 Stages 6A–6E are validated. Physical baseline is `0.1.25/build 26` on `app0`, native image `VALID`, application `ONLINE`, Wi-Fi + MQTT/TLS connected, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, EventBus `dropped=0`. OTA automatic checks, MQTT reconnect/telemetry and Wi-Fi reconnect timing now use the cooperative TaskScheduler pattern where appropriate. Proceed to Stage 7; preserve this runtime ownership model for future components.
+
+
+## Stage 7C closure
+
+Stage 7C is physically validated. Controlled `0.1.34-remote-test/build 35` proved
+EventBus -> RuleRuntime -> one-shot TaskScheduler -> RuleEngine execution while
+Wi-Fi/MQTT were deliberately unavailable. Hysteresis, disabled-rule rejection,
+Supervisor recovery and EventBus `dropped=0` were verified. Clean
+`0.1.35/build 36` is running on `app0/VALID`, Wi-Fi + MQTT/TLS connected, HTTPS-only
+remote update restored, ConfigurationStore revision 3 preserved, production registry
+contains only `connectivity`, RuleRuntime is `DISABLED`, and Stage 7C lab endpoints are
+absent.

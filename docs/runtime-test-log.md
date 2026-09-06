@@ -162,3 +162,21 @@ Implementation checkpoint:
 - Aurora issue #731 was labelled failed even though the proof file ended `STAGE7B_PHYSICAL_PROOF_OK`. Follow-up issue #732 inspected the wrapper and showed `RC=0`; closure is based on the explicit physical assertions, proof marker, and live clean-device state rather than the incorrect wrapper label.
 
 **Stage 7B: VALIDATED. Stage 7C is next.**
+
+
+## 2026-09-05 — Stage 7C RuleRuntime physical result
+
+### Result — PASS
+
+- Stage 7C introduced `RuleRuntime` as the EventBus/TaskScheduler adapter around the already validated hysteresis RuleEngine.
+- Controlled lab image `0.1.34-remote-test/build 35` installed through the signed A/B OTA path and reached `PENDING_VERIFY -> VALID` on `app1`.
+- With a rule armed, the evaluation task remained disabled until an input event arrived. Each input scheduled one `TASK_ONCE` evaluation and the task disabled again after completion.
+- Offline proof: a local input value `15` was queued with a 3 s delay, then Wi-Fi was deliberately disconnected and reconnect suppressed long enough to confirm HTTP was unreachable. After connectivity recovered, `RuleRuntime` reported `scheduled_count=1`, `completed_count=1`, `last_run_result=TURN_ON`; the virtual heater was ON. This proves the local rule path executed while Wi-Fi/MQTT were absent.
+- Online hysteresis regression passed: `17 -> HOLD` while heater remained ON, then `19 -> TURN_OFF`.
+- After disabling the rule, another input increased `rejected_count` but did not increase `scheduled_count` or `completed_count`, proving disabled rules do not consume evaluation work.
+- Supervisor recovered to `RUNNING/OK`; EventBus remained `dropped=0`.
+- Clean target `0.1.35/build 36` installed on `app0`, reached `PENDING_VERIFY -> VALID`, returned Wi-Fi + MQTT/TLS, restored HTTPS-only remote update, preserved ConfigurationStore revision 3, reduced the production registry to only `connectivity`, left RuleEngine unconfigured and RuleRuntime `DISABLED`, and removed Stage 7C lab endpoints (HTTP 404).
+- Final proof marker: `STAGE7C_PHYSICAL_PROOF_OK`.
+- Canonical default firmware is promoted to `0.1.35/build 36`.
+
+**Stage 7C: VALIDATED. Stage 7D is next: persisted rule binding to the ConfigurationStore revision lifecycle.**
