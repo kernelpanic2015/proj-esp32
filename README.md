@@ -6,6 +6,8 @@ Stages 0-7 define the validated reusable Core. Application-specific hardware and
 
 **Current Core baseline:** `core-v1.0.0` -> firmware `0.1.41/build 42`. See [`docs/CORE_BASELINE.md`](docs/CORE_BASELINE.md).
 
+Machine/agent-readable Core metadata is published in [`core-manifest.json`](core-manifest.json). New derived projects should start with [`docs/APPLICATION_BOOTSTRAP.md`](docs/APPLICATION_BOOTSTRAP.md).
+
 ## Current hardware
 
 - Board family: NodeMCU-32S, 38 pins
@@ -82,4 +84,4 @@ For non-interactive runtime capture under Aurora, prefer `scripts/capture_serial
 
 ## Documentation
 
-Start at [`docs/CORE_BASELINE.md`](docs/CORE_BASELINE.md), then [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md). [`docs/README.md`](docs/README.md) is the complete documentation index. New application chats should identify the Core baseline they derive from before defining external hardware. MQTT/RabbitMQ validation is documented in [`docs/mqtt.md`](docs/mqtt.md).
+For Core work, start at [`core-manifest.json`](core-manifest.json) and [`docs/CORE_BASELINE.md`](docs/CORE_BASELINE.md), then [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md). For a derived application, use [`docs/APPLICATION_BOOTSTRAP.md`](docs/APPLICATION_BOOTSTRAP.md) before selecting hardware-specific work. [`docs/README.md`](docs/README.md) is the complete documentation index. MQTT/RabbitMQ validation is documented in [`docs/mqtt.md`](docs/mqtt.md).
