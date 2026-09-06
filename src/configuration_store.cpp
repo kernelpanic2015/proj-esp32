@@ -17,6 +17,8 @@ String activeRaw;
 uint32_t activeRevision = 0;
 bool recoveredOnBoot = false;
 String lastResult = "never";
+ConfigurationStore::ValidateActiveCallback ruleValidator = nullptr;
+ConfigurationStore::ActivatedCallback activatedCallback = nullptr;
 
 constexpr char NVS_NAMESPACE[] = "app-config";
 constexpr char KEY_ACTIVE[] = "active";
@@ -344,6 +346,14 @@ bool apply(const String& candidateJson, String& error) {
   String canonical;
   if (!canonicalizeCandidate(candidateJson, nextRevision, canonical, error)) return false;
 
+  if (ruleValidator) {
+    String semanticError;
+    if (!ruleValidator(canonical, semanticError)) {
+      error = semanticError.length() ? semanticError : "configuration_rule_semantic_invalid";
+      return false;
+    }
+  }
+
   const uint8_t nextSlot = activeSlot == 0 ? 1 : 0;
   String verified;
   if (!persistSlotVerified(nextSlot, canonical, nextRevision, verified, error)) return false;
@@ -358,7 +368,15 @@ bool apply(const String& candidateJson, String& error) {
   activeRevision = nextRevision;
   recoveredOnBoot = false;
   lastResult = "applied";
+  if (activatedCallback) activatedCallback(activeRevision, activeRaw);
   return true;
+}
+
+void setRuleLifecycleCallbacks(ValidateActiveCallback validator, ActivatedCallback activated) {
+  ConfigLock lock;
+  if (!lock.locked()) return;
+  ruleValidator = validator;
+  activatedCallback = activated;
 }
 
 bool rollback(String& error) {
@@ -398,6 +416,14 @@ bool rollback(String& error) {
     return false;
   }
 
+  if (ruleValidator) {
+    String semanticError;
+    if (!ruleValidator(rollbackRaw, semanticError)) {
+      error = semanticError.length() ? semanticError : "configuration_rule_semantic_invalid";
+      return false;
+    }
+  }
+
   String verified;
   if (!persistSlotVerified(previousSlot, rollbackRaw, nextRevision, verified, error)) return false;
   if (configPreferences.putUChar(KEY_ACTIVE, previousSlot) != 1) {
@@ -410,6 +436,7 @@ bool rollback(String& error) {
   activeRevision = nextRevision;
   recoveredOnBoot = false;
   lastResult = "rolled_back";
+  if (activatedCallback) activatedCallback(activeRevision, activeRaw);
   return true;
 }
 

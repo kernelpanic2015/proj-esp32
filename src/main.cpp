@@ -32,10 +32,9 @@
 #include "components/connectivity_component.h"
 #include "rules/rule_engine.h"
 #include "rules/rule_runtime.h"
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+#include "rules/persisted_rule_loader.h"
 #include "components/virtual_input_component.h"
 #include "components/virtual_actuator_component.h"
-#endif
 
 enum Event : int {
   EVT_START_NETWORK = 1,
@@ -66,10 +65,8 @@ RuntimeCore::EventBus runtimeEvents;
 RuntimeCore::ComponentRegistry runtimeComponents;
 RuntimeCore::Supervisor runtimeSupervisor(runtimeComponents, runtimeEvents);
 Rules::RuleEngine ruleEngine(runtimeEvents);
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
 Components::VirtualInputComponent virtualTemperature(runtimeEvents, "virtual.temperature");
 Components::VirtualActuatorComponent virtualHeater(runtimeEvents, "virtual.heater");
-#endif
 
 bool ruleInputReady();
 float ruleInputValue();
@@ -78,6 +75,7 @@ bool ruleApplyDesired(bool desiredOn);
 Rules::RuleRuntime ruleRuntime(cooperativeScheduler, runtimeEvents, ruleEngine,
                                "virtual.temperature", ruleInputReady, ruleInputValue,
                                ruleOutputState, ruleApplyDesired);
+Rules::PersistedRuleLoader persistedRuleLoader(ruleEngine, ruleRuntime);
 
 bool mqttConfigured();
 bool runtimeWifiConnected();
@@ -287,37 +285,20 @@ bool runtimeMqttConfigured() {
   return mqttConfigured();
 }
 
-bool ruleInputReady() {
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
-  return virtualTemperature.hasValue();
-#else
-  return false;
-#endif
+bool ruleInputReady() { return virtualTemperature.hasValue(); }
+float ruleInputValue() { return virtualTemperature.value(); }
+bool ruleOutputState() { return virtualHeater.isOn(); }
+bool ruleApplyDesired(bool desiredOn) { return virtualHeater.applyDesired(desiredOn); }
+
+bool validatePersistedRules(const String& raw, String& error) {
+  return persistedRuleLoader.validateDocument(raw, error);
 }
 
-float ruleInputValue() {
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
-  return virtualTemperature.value();
-#else
-  return 0.0f;
-#endif
-}
-
-bool ruleOutputState() {
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
-  return virtualHeater.isOn();
-#else
-  return false;
-#endif
-}
-
-bool ruleApplyDesired(bool desiredOn) {
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
-  return virtualHeater.applyDesired(desiredOn);
-#else
-  (void)desiredOn;
-  return false;
-#endif
+void activatePersistedRules(uint32_t revision, const String& raw) {
+  String error;
+  if (!persistedRuleLoader.activateDocument(raw, revision, error)) {
+    logLine("PERSISTED_RULE_RELOAD_FAILED " + error);
+  }
 }
 
 #ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
@@ -377,6 +358,7 @@ String statusJson() {
   json += "\"configuration\":" + ConfigurationStore::statusJson() + ",";
   json += "\"rule_engine\":" + ruleEngine.statusJson() + ",";
   json += "\"rule_runtime\":" + ruleRuntime.statusJson() + ",";
+  json += "\"persisted_rules\":" + persistedRuleLoader.statusJson() + ",";
   json += "\"components\":" + runtimeComponents.statusJson() + ",";
   json += "\"supervisor\":" + runtimeSupervisor.statusJson() + ",";
   json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
@@ -769,6 +751,7 @@ void startNetworkServices() {
     body += "configuration_status=/api/configuration/status\n";
     body += "rules_status=/api/rules/status\n";
     body += "rules_runtime=/api/rules/runtime\n";
+    body += "persisted_rules=/api/rules/persisted\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
     body += "wifi_runtime=/api/wifi/runtime\n";
@@ -792,6 +775,10 @@ void startNetworkServices() {
 
   server.on("/api/rules/runtime", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", ruleRuntime.statusJson());
+  });
+
+  server.on("/api/rules/persisted", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", persistedRuleLoader.statusJson());
   });
 
   server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -1055,12 +1042,15 @@ void setup() {
     Serial.println("RULE_RUNTIME_INIT_FAILED");
   }
   runtimeComponents.add(connectivityComponent);
-#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
   runtimeComponents.add(virtualTemperature);
   runtimeComponents.add(virtualHeater);
-#endif
   if (!runtimeComponents.beginAll()) {
     Serial.println("RUNTIME_COMPONENT_INIT_DEGRADED");
+  }
+  virtualHeater.enable(false);
+  ConfigurationStore::setRuleLifecycleCallbacks(validatePersistedRules, activatePersistedRules);
+  if (!persistedRuleLoader.begin()) {
+    Serial.println("PERSISTED_RULE_LOAD_FAILED");
   }
   runtimeSupervisor.begin();
   connectivityHealthTask.enableDelayed(2000);

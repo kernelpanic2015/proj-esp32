@@ -1,1 +1,0 @@
-Stage 7D inspection marker; remove after implementation.

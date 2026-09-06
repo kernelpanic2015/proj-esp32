@@ -56,6 +56,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Stage 7A transactional ConfigurationStore: apply/reject/reboot/rollback/OTA persistence physically validated
 - [x] Stage 7B minimal RuleEngine + virtual I/O semantics physically validated
 - [x] Stage 7C TaskScheduler/EventBus one-shot rule runtime physically validated, including offline execution
+- [~] Stage 7D persisted rule binding + boot/apply/rollback lifecycle; physical proof pending
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI

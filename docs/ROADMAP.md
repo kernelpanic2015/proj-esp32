@@ -187,7 +187,7 @@ Core services:
 - [x] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
 - [x] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; semantic and physical behavior validated;
 - [x] **Stage 7C** — TaskScheduler/EventBus-driven one-shot RuleRuntime physically validated, including real offline execution;
-- [ ] **Stage 7D** — bind validated persisted rule documents/revisions to RuleEngine/RuleRuntime lifecycle;
+- [~] **Stage 7D** — persisted rule binding to RuleEngine/RuleRuntime with boot/apply/rollback lifecycle; physical proof pending;
 - [ ] **Stage 7E** — local `Scheduler` for schedules/delayed actions/settling windows;
 - [ ] dependency/fault policies for actuators.
 

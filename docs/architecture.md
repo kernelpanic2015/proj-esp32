@@ -406,3 +406,12 @@ Actuator component   -> owns application
 
 External connectivity is therefore observability/management, not a prerequisite for
 the local rule-control path.
+
+
+## Stage 7D persisted-rule ownership
+
+ConfigurationStore owns durable bytes and monotonic revision. PersistedRuleLoader owns
+translation of a validated active rule document into RuleEngine semantics and asks
+RuleRuntime to refresh eligibility. RuleRuntime still owns FSM/event/scheduler state;
+TaskScheduler never parses configuration. Apply and rollback activate the newly committed
+revision locally, preserving the rule that cloud/network manages but local firmware controls.

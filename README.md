@@ -29,7 +29,7 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 **Current physical baseline:** `0.1.35/build 36`, `app0`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. ConfigurationStore remains revision 3; the production RuleRuntime is `DISABLED` with no active rule and Stage 7C lab endpoints are absent.
 
-**Stage 7A is validated:** `ConfigurationStore` provides versioned dual-slot NVS transactions with rollback. **Stage 7B is validated:** the minimal hardware-independent hysteresis RuleEngine and virtual input/output path were physically proven, including deadband and disabled-rule behavior; RuleEngine returns desired state and never accesses GPIO. **Stage 7C is validated:** `RuleRuntime` now connects EventBus to a one-shot TaskScheduler evaluation task; the task is disabled unless work is meaningful, and a real Wi-Fi/MQTT outage proved the local rule path still executed. **Stage 7D is next:** bind validated persisted rule documents/revisions to the engine/runtime lifecycle.
+**Stages 7A-7C are validated:** transactional configuration, hysteresis semantics, and one-shot local RuleRuntime execution have all been physically proven. **Stage 7D is in progress:** persisted ConfigurationStore rule documents become the source of truth for RuleEngine/RuleRuntime across boot, apply and rollback; physical persistence/rollback proof is pending.
 
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 

@@ -1,7 +1,0 @@
-scripts/stage7d_implement.py
-scripts/stage7d_inspect_placeholder.txt
-scripts/stage7d_probe.sh
-scripts/stage7d_apply_patch.py
-scripts/stage7d_preflight.sh
-scripts/stage7d_note.txt
-scripts/ignore.me

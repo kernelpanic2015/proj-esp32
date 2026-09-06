@@ -219,3 +219,41 @@ RuleRuntime `DISABLED`, and removed all Stage 7C lab endpoints (HTTP 404).
 
 **Stage 7C: VALIDATED. Stage 7D binds persisted validated rule documents/revisions to
 the RuleEngine/RuleRuntime lifecycle.**
+
+
+## Stage 7D — persisted rule activation
+
+Stage 7D binds transactional ConfigurationStore revisions to RuleEngine/RuleRuntime.
+New candidates are semantically validated before the inactive slot is written or the
+active pointer changes. Existing Stage 7A stored documents remain boot-readable for
+migration safety; unsupported legacy rule envelopes do not become executable until
+replaced by a valid Stage 7D rule document.
+
+The first executable persisted rule schema is deliberately narrow:
+
+```json
+{
+  "schema": 1,
+  "rules": [{
+    "id": "demo.temperature.heater",
+    "type": "hysteresis",
+    "input": "virtual.temperature",
+    "output": "virtual.heater",
+    "enabled": true,
+    "on_below": 16,
+    "off_above": 18
+  }],
+  "schedules": []
+}
+```
+
+Stage 7D supports zero or one executable rule. New configuration is rejected before
+activation when type/binding/hysteresis semantics are unsupported. After a successful
+apply or rollback commit, PersistedRuleLoader activates the committed JSON/revision
+without re-entering the ConfigurationStore mutex and refreshes RuleRuntime eligibility.
+No Wi-Fi, MQTT or cloud dependency is involved.
+
+`GET /api/rules/persisted` exposes non-secret binding diagnostics: loaded revision,
+loaded rule id and loader result. Virtual input/actuator components are present in the
+clean Stage 7D runtime as software-only local bindings; mutation/test HTTP endpoints
+remain lab-build-only. Real GPIO remains deferred.
