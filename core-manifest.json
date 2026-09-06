@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "schema_id": "proj-esp32.core-manifest.v1",
+  "manifest_version": 1,
+  "core": {
+    "name": "proj-esp32 Core Foundation",
+    "version": "1.0.0",
+    "repository": "kernelpanic2015/proj-esp32",
+    "development_branch": "main",
+    "foundation_stages": "0-7",
+    "status": "validated_foundation"
+  },
+  "baseline": {
+    "name": "core-v1.0.0",
+    "ref_kind": "frozen_branch",
+    "commit": "f2ab6e7a16e418a7f60d44b1a60ad6a6e7c37084",
+    "policy": "Treat this ref as frozen. Future Core releases should use immutable release refs and must never silently redefine a published baseline.",
+    "firmware": {
+      "version": "0.1.41",
+      "build": 42,
+      "channel": "dev"
+    },
+    "physical_validation": {
+      "date": "2026-09-06",
+      "running_partition": "app0",
+      "ota_image_state": "VALID",
+      "application_state": "ONLINE",
+      "supervisor": "RUNNING/OK",
+      "event_bus_dropped": 0,
+      "configuration_revision": 10,
+      "default_dependency_policy": "SAFE_OFF"
+    }
+  },
+  "hardware_compatibility": {
+    "platform": "ESP32",
+    "board_id": "nodemcu-32s",
+    "board_family": "NodeMCU-32S",
+    "module": "ESP-WROOM-32",
+    "mcu": "ESP32-D0WD-V3",
+    "flash_bytes": 4194304,
+    "logic_voltage": 3.3
+  },
+  "capabilities": [
+    {"id": "runtime.task_scheduler_fsm", "status": "validated"},
+    {"id": "runtime.component_registry_health", "status": "validated"},
+    {"id": "runtime.event_bus", "status": "validated"},
+    {"id": "runtime.supervisor", "status": "validated"},
+    {"id": "network.wifi_provisioning_recovery", "status": "validated"},
+    {"id": "network.mqtt_tls_reference_transport", "status": "validated", "note": "CloudAMQP/RabbitMQ is a validated reference deployment, not an application requirement."},
+    {"id": "observability.http_status_webserial_telemetry", "status": "validated"},
+    {"id": "ota.signed_ab_update", "status": "validated"},
+    {"id": "ota.boot_validation_rollback", "status": "validated"},
+    {"id": "configuration.transactional_nvs", "status": "validated"},
+    {"id": "rules.local_rule_engine_runtime", "status": "validated"},
+    {"id": "schedules.persisted_activation_relative_delay", "status": "validated"},
+    {"id": "rules.dependency_fault_policies", "status": "validated", "values": ["SAFE_OFF", "SAFE_ON", "KEEP_LAST_STATE", "DISABLE_RULE", "ALARM_ONLY"]},
+    {"id": "autonomy.offline_local_control", "status": "validated"}
+  ],
+  "core_contracts": {
+    "task_scheduler": "when work becomes eligible",
+    "fsm": "state and behavior",
+    "event_bus": "what happened",
+    "component": "subsystem responsibility and health interpretation",
+    "supervisor": "aggregate health",
+    "rule_engine": "desired consequence",
+    "driver": "physical hardware access"
+  },
+  "application_boundary": {
+    "core_owns": [
+      "timing and runtime contracts",
+      "state and health contracts",
+      "configuration and persistence infrastructure",
+      "local rules and generic fault policy",
+      "connectivity and observability surfaces",
+      "signed update and rollback infrastructure"
+    ],
+    "application_owns": [
+      "selected external devices",
+      "product GPIO assignments",
+      "device-specific drivers unless promoted as reusable",
+      "domain rules and workflows",
+      "screens and UI behavior",
+      "application-specific cloud integrations",
+      "application version and roadmap"
+    ]
+  },
+  "telemetry_feedback_policy": {
+    "principle": "Field evidence changes the Core only when the finding is reusable across applications.",
+    "flow": [
+      "observe application telemetry/fault/field evidence",
+      "reproduce against Core",
+      "fix on Core main when reusable",
+      "run regression and physical validation",
+      "publish a new Core baseline",
+      "applications adopt after their own regression tests"
+    ]
+  },
+  "known_core_hardening_backlog": [
+    {"id": "tls.ca_validation", "status": "pending", "note": "Current development MQTT TLS path still uses setInsecure()."},
+    {"id": "mqtt.lwt", "status": "pending"},
+    {"id": "mqtt.reconnect_backoff_jitter", "status": "pending"},
+    {"id": "recovery.littlefs_ui", "status": "candidate", "note": "Keep in Core only if it remains generic across applications."}
+  ],
+  "source_of_truth": {
+    "core_contract": "docs/CORE_BASELINE.md",
+    "new_chat_bootstrap": "docs/BOOTSTRAP.md",
+    "application_bootstrap": "docs/APPLICATION_BOOTSTRAP.md",
+    "architecture": "docs/architecture.md",
+    "operations": "docs/operations.md",
+    "roadmap_history": "docs/ROADMAP.md"
+  },
+  "security": {
+    "secrets_in_manifest": false,
+    "private_signing_keys_in_repository": false,
+    "note": "Do not add Wi-Fi credentials, broker credentials, tokens, private keys or device secrets to this manifest."
+  }
+}
