@@ -304,3 +304,48 @@ The first target is a dedicated software-only `virtual.schedule_output`; no GPIO
 touched. `GET /api/schedules/status` exposes state, loaded revision, task enable state,
 counters and the active schedule. ConfigurationStore semantic validation invokes both
 the persisted-rule and persisted-schedule validators before committing a candidate.
+
+## Stage 7E physical validation
+
+Stage 7E was physically validated through the signed A/B path. Controlled
+`0.1.38-remote-test/build 39` first loaded the existing revision 6 document with no
+schedule. A candidate bound to unsupported target `gpio.1` returned HTTP 400
+(`schedule_target_unsupported`) and revision 6 remained active.
+
+Schedule A (`persisted.demo.delay.a`, desired ON, 6000 ms) committed as revision 7
+and entered `WAITING` with its one-shot task enabled. Wi-Fi was then deliberately
+disconnected with reconnect suppressed for the lab window. The schedule completed at
+about 19.0 s after boot, while Wi-Fi reconnect succeeded only at about 22.0 s, proving
+the action executed locally before connectivity returned. The task disabled after
+completion and `virtual.schedule_output` was ON.
+
+Schedule B (`persisted.demo.delay.b`, desired OFF, 15000 ms) became revision 8.
+After an intentional reboot, ConfigurationStore loaded revision 8 and
+LocalScheduleService automatically re-armed from boot/activation, remained `WAITING`,
+then completed after the relative delay with the virtual output OFF. Explicit rollback
+restored schedule A as monotonic revision 9, re-armed it immediately and completed
+again.
+
+A clean-persist schedule (`persisted.demo.delay.clean`, desired ON, 15000 ms) became
+revision 10 before signed OTA to clean `0.1.39/build 40`. The clean image reached
+`app0/PENDING_VERIFY -> VALID`, retained revision 10, loaded both the persisted rule
+and schedule automatically, completed the delayed action, and returned its work task
+to disabled. HTTPS-only remote update was restored, Wi-Fi + MQTT/TLS were healthy,
+Supervisor was `RUNNING/OK`, EventBus remained `dropped=0`, and lab endpoints returned
+HTTP 404.
+
+The original physical wrapper (#775) returned exit code 1 after printing the complete
+`STAGE7E_PHYSICAL_PROOF_OK` record. A separate read-only reconciliation (#777)
+finished `aurora:completed`, exit code 0, checked the recorded proof plus live device
+state, found no proof-console errors, and produced
+`STAGE7E_PHYSICAL_RECONCILED_OK`. No OTA or configuration mutation was repeated during
+reconciliation.
+
+`ConfigurationStore` lifecycle callbacks now run after the store mutex is released,
+so rule/schedule activation cannot deadlock by being called while `ConfigLock` is
+held. The callback contract is still `void`; current semantic validation makes all
+supported activations deterministic, but a future fallible activation subsystem
+should use an explicit result/compensation contract rather than pretending the
+post-commit callback itself is transactional.
+
+**Stage 7E: VALIDATED.**

@@ -57,7 +57,7 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Stage 7B minimal RuleEngine + virtual I/O semantics physically validated
 - [x] Stage 7C TaskScheduler/EventBus one-shot rule runtime physically validated, including offline execution
 - [x] Stage 7D persisted rule binding + boot/apply/rollback lifecycle physically validated
-- [~] Stage 7E local persisted delayed-action service; physical offline/reboot proof pending
+- [x] Stage 7E local persisted delayed-action service; physical offline/reboot/rollback/clean-OTA proof validated
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -67,13 +67,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after Stage 7D closure:
+Validated directly on the physical device on 2026-09-06 after Stage 7E closure:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.37`, build `38`, channel `dev`
+- firmware: `0.1.39`, build `40`, channel `dev`
 - running OTA partition: `app0`
 - boot partition: `app0`
 - next update partition: `app1`
@@ -89,11 +89,12 @@ Validated directly on the physical device on 2026-09-05 after Stage 7D closure:
 - PubSubClient payload buffer: explicit 4096 bytes; full status telemetry >2 KiB physically proven
 - remote OTA policy: HTTPS-only
 - lab-only Wi-Fi/MQTT/rule mutation endpoints: absent from the clean image
-- ConfigurationStore: revision `6`, persisted rule `persisted.demo.a`
+- ConfigurationStore: revision `10`, persisted rule `persisted.demo.a`, persisted schedule `persisted.demo.delay.clean`
 - RuleEngine: configured/enabled from persisted configuration
-- RuleRuntime: `ARMED`; work task disabled and no pending work until input exists
+- RuleRuntime: `ARMED`; rule work task disabled and no pending work until input exists
+- LocalScheduleService: revision `10`, schedule completed, schedule work task disabled, `virtual.schedule_output=ON`
 
-Stages 7A-7C remain validated. **Stage 7D is now physically validated:** persisted rule semantics activate immediately after transactional apply, reload automatically after reboot, follow monotonic ConfigurationStore rollback, and survive clean signed A/B OTA. Clean `0.1.37/build 38` holds configuration revision 6 with `persisted.demo.a` loaded; RuleRuntime is `ARMED` while its work task stays disabled until meaningful input exists. **Stage 7E is next:** local persisted schedules and delayed actions above TaskScheduler.
+Stages 7A-7D remain validated. **Stage 7E is now physically validated:** persisted relative delayed actions are semantically validated before commit, execute locally while connectivity is absent, re-arm automatically after reboot, follow monotonic rollback, and survive clean signed A/B OTA. Clean `0.1.39/build 40` holds configuration revision 10 with `persisted.demo.a` and `persisted.demo.delay.clean`; the schedule completed locally and its one-shot task returned to disabled. Stage 7 remains open only for explicit dependency/fault policies before real actuator GPIO is introduced.
 
 ## OTA partition layout
 

@@ -177,7 +177,7 @@ Stage 6 core is therefore validated. Future subsystems should continue adopting 
 
 Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 
-## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7D]
+## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7E validated]
 
 Implement versioned, validated, transactional configuration with rollback to previous configuration.
 
@@ -188,7 +188,7 @@ Core services:
 - [x] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; semantic and physical behavior validated;
 - [x] **Stage 7C** — TaskScheduler/EventBus-driven one-shot RuleRuntime physically validated, including real offline execution;
 - [x] **Stage 7D** — persisted rule binding to RuleEngine/RuleRuntime with boot/apply/rollback lifecycle physically validated;
-- [~] **Stage 7E** — local persisted delayed-action service above TaskScheduler; physical offline/reboot proof pending;
+- [x] **Stage 7E** — local persisted delayed-action service above TaskScheduler; physical offline/reboot/rollback/clean-OTA proof validated;
 - [ ] dependency/fault policies for actuators.
 
 Stage 7A stores rule/schedule envelopes but does not execute them yet. Rule semantics become active only after the RuleEngine validator/evaluator is introduced.
@@ -203,7 +203,9 @@ The proof also exposed a recovery interaction: two intentional software reboots 
 
 **Stage 7D: VALIDATED on hardware.** Legacy revision 3 remained boot-readable but non-executable. A semantically invalid hysteresis candidate was rejected without changing revision 3. Valid rule A became revision 4 and immediately armed RuleRuntime; after reboot it reloaded automatically and drove the virtual actuator. Rule B became revision 5; explicit rollback restored rule A as monotonic revision 6, and that rollback survived reboot. Clean `0.1.37/build 38` reached `app0/VALID`, retained revision 6, automatically loaded `persisted.demo.a`, left RuleRuntime `ARMED` with its work task disabled until input exists, restored HTTPS-only operation and removed lab endpoints.
 
-**Stage 7E next:** introduce the local schedule/delayed-action service above TaskScheduler, keeping persisted schedule semantics separate from the scheduler primitive and keeping inactive schedule work disabled.
+**Stage 7E: VALIDATED on hardware.** A controlled `0.1.38-remote-test/build 39` image rejected unsupported schedule semantics without advancing revision 6, then committed schedule A as revision 7. Its 6 s delayed action fired locally while Wi-Fi/MQTT were deliberately unavailable and before network reconnection. Schedule B became revision 8 and automatically re-armed after reboot; rollback restored schedule A as monotonic revision 9 and executed it again. A clean-persist schedule became revision 10, survived signed A/B OTA to clean `0.1.39/build 40`, automatically loaded there, waited with its `TASK_ONCE` work enabled only while meaningful, completed, and returned the work task to disabled. The clean image is `app0/VALID`, HTTPS-only, Wi-Fi + MQTT/TLS healthy, Supervisor `RUNNING/OK`, EventBus `dropped=0`, with lab endpoints HTTP 404.
+
+**Stage 7 next:** define dependency/fault policies for real actuators before introducing physical GPIO control. Stage 8 remains the RTC/display/touch/SD foundation; calendar/cron semantics wait for validated timekeeping.
 
 ## Stage 8 — RTC, display, touch and SD foundation
 

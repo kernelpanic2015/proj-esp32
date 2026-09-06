@@ -197,3 +197,22 @@ Implementation checkpoint:
 - Aurora #765 reconciled the complete proof and ended `completed`, exit code 0, with marker `STAGE7D_PHYSICAL_PROOF_OK`.
 
 **Stage 7D: VALIDATED. Stage 7E local schedule/delayed-action service is next.**
+
+## 2026-09-06 — Stage 7E local delayed-action physical result
+
+### Result — PASS
+
+- Added `LocalScheduleService` with FSM `DISABLED -> WAITING -> FIRING -> COMPLETED/FAULT`.
+- The service owns one `TASK_ONCE` work item and uses TaskScheduler delayed activation; it is enabled only while meaningful work is waiting.
+- Unsupported target candidate was rejected with HTTP 400 at revision 6; active configuration did not change.
+- Schedule A became revision 7 and its 6 s delayed ON action completed locally while Wi-Fi/MQTT were deliberately unavailable, before Wi-Fi reconnection.
+- Schedule B became revision 8; after intentional reboot it automatically loaded and re-armed, then completed its 15 s delayed OFF action.
+- Explicit rollback restored schedule A as monotonic revision 9 and immediately re-armed it.
+- Clean-persist schedule C became revision 10 and survived signed A/B OTA.
+- Clean `0.1.39/build 40` reached `app0/PENDING_VERIFY -> VALID`, automatically loaded revision 10, kept persisted rule `persisted.demo.a`, armed/completed `persisted.demo.delay.clean`, and left the schedule work task disabled afterward.
+- Clean runtime remained HTTPS-only; lab Wi-Fi/rule endpoints returned HTTP 404.
+- Wi-Fi + MQTT/TLS connected, Supervisor `RUNNING/OK`, EventBus `dropped=0`, and `virtual.schedule_output=ON`.
+- Lifecycle activation was moved outside the ConfigurationStore mutex before final proof; post-fix normal and three-profile matrix builds all passed.
+- Physical wrapper #775 printed `STAGE7E_PHYSICAL_PROOF_OK` but returned exit code 1 due to wrapper status handling. Read-only #777 revalidated the proof and live clean state, ended `aurora:completed`/exit 0, and printed `STAGE7E_PHYSICAL_RECONCILED_OK`.
+
+**Stage 7E: VALIDATED. Stage 7 dependency/fault policies are next; Stage 8 RTC/time comes after that.**

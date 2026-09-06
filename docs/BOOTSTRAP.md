@@ -38,14 +38,14 @@ The complete development path is working:
 
 GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora Watch is the preferred read-only observation plane.
 
-## Current firmware baseline — verified 2026-09-05
+## Current firmware baseline — verified 2026-09-06
 
-Current physical device state after Stage 7D persisted-rule closure:
+Current physical device state after Stage 7E persisted delayed-action closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.37`
-- build: `38`
+- firmware: `0.1.39`
+- build: `40`
 - channel: `dev`
 - running partition: `app0`
 - boot partition: `app0`
@@ -67,9 +67,9 @@ Current physical device state after Stage 7D persisted-rule closure:
 
 `arkhipenko/TaskScheduler` 4.0.8 runs alongside `jonblack/arduino-fsm`: TaskScheduler owns timing/eligibility; FSMs own state/behavior; components own subsystem interpretation; EventBus owns transition delivery; Supervisor aggregates registry health only.
 
-Stage 6E physically proved full Wi-Fi loss/recovery. Stage 7A proved dual-slot transactional configuration. Stage 7B proved hysteresis semantics, Stage 7C proved event-driven local execution during a real Wi-Fi/MQTT outage, and Stage 7D now proves persisted rule activation across apply/reboot/rollback/OTA. The current ConfigurationStore document is revision 6 and remains local-NVS backed.
+Stage 6E physically proved full Wi-Fi loss/recovery. Stage 7A proved dual-slot transactional configuration. Stage 7B proved hysteresis semantics, Stage 7C proved event-driven local execution during a real Wi-Fi/MQTT outage, Stage 7D proved persisted rule activation across apply/reboot/rollback/OTA, and Stage 7E proves persisted relative delayed actions across offline execution/reboot/rollback/clean OTA. The current ConfigurationStore document is revision 10 and remains local-NVS backed.
 
-Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 70% flash usage.
+Normal build remains within the 1728 KiB OTA slot at roughly 17.4% static RAM and 71.5% flash usage.
 
 ## Stage 7A ConfigurationStore — validated
 
@@ -109,7 +109,22 @@ Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 
 - virtual bindings exist in the clean runtime, but mutation/test HTTP endpoints are absent;
 - Supervisor: `RUNNING/OK`; EventBus `dropped=0`; Wi-Fi + MQTT/TLS healthy; HTTPS-only remote update.
 
-**Stage 7E next:** local persisted schedule/delayed-action service above TaskScheduler. Keep scheduler primitives separate from schedule semantics; inactive work stays disabled.
+## Stage 7E local delayed actions — validated
+
+- clean physical baseline: `0.1.39/build 40`, `app0/VALID`;
+- ConfigurationStore revision: `10`;
+- persisted rule: `persisted.demo.a`, hysteresis 16/18;
+- persisted schedule: `persisted.demo.delay.clean`, `delay_after_activation`, 15 s, target `virtual.schedule_output`;
+- invalid unsupported target was rejected at revision 6 without mutating active configuration;
+- revision 7 schedule fired locally while Wi-Fi/MQTT were deliberately unavailable and before reconnection;
+- revision 8 schedule automatically re-armed after intentional reboot and completed;
+- rollback restored the prior schedule as monotonic revision 9 and re-armed it;
+- revision 10 survived clean signed OTA and automatically loaded/executed on the clean image;
+- LocalScheduleService work task is disabled after completion and is enabled only while a delayed action is waiting;
+- clean image is HTTPS-only; lab Wi-Fi/rule mutation endpoints return HTTP 404;
+- Supervisor `RUNNING/OK`; EventBus `dropped=0`; Wi-Fi + MQTT/TLS healthy.
+
+Stage 7 remains open only for explicit dependency/fault policies before real actuator GPIO is introduced. Relative delay semantics intentionally restart from activation after reboot; wall-clock/calendar schedules remain deferred until validated RTC/timekeeping.
 
 ## Flash layout — validated
 
@@ -346,11 +361,11 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. Start **Stage 7D**: bind validated persisted rule documents and ConfigurationStore revisions to RuleEngine/RuleRuntime lifecycle.
-2. Preserve the Stage 7C invariant: RuleRuntime work tasks remain disabled until an event makes evaluation meaningful; connectivity is never required for local rule execution.
-3. Then add the local schedule/delayed-action layer for schedules, settling windows and future actuator timing.
+1. Keep the clean Stage 7E baseline `0.1.39/build 40` intact and start the remaining **Stage 7 dependency/fault policy** design before any real actuator GPIO is introduced.
+2. Define explicit dependent-output policies such as `SAFE_OFF`, `SAFE_ON`, `KEEP_LAST_STATE`, `DISABLE_RULE` and `ALARM_ONLY`, preserving component-level fault isolation.
+3. Preserve the runtime ownership model: TaskScheduler = timing, FSM = state, ConfigurationStore = persisted desired configuration, EventBus = events, RuleEngine = consequence, Component = responsibility, Driver = hardware.
 4. Keep the cross-cutting network-hardening backlog: replace `setInsecure()` with CA validation, then add MQTT LWT and backoff/jitter.
-5. Continue opportunistic TaskScheduler + FSM migration only when touching a subsystem or when it materially reduces custom timing/recovery code.
+5. Do not add calendar/cron semantics until the Stage 8 RTC/time foundation exists; the validated Stage 7E delay is intentionally activation-relative.
 
 ## Source-of-truth invariant
 
@@ -375,3 +390,13 @@ Supervisor recovery and EventBus `dropped=0` were verified. Clean
 remote update restored, ConfigurationStore revision 3 preserved, production registry
 contains only `connectivity`, RuleRuntime is `DISABLED`, and Stage 7C lab endpoints are
 absent.
+
+## Stage 7E closure
+
+Stage 7E is physically validated. The canonical clean device baseline is
+`0.1.39/build 40` on `app0/VALID`, ConfigurationStore revision 10, persisted rule
+`persisted.demo.a`, persisted delayed action `persisted.demo.delay.clean`, RuleRuntime
+`ARMED`, LocalScheduleService completed with its work task disabled,
+`virtual.schedule_output=ON`, Wi-Fi + MQTT/TLS connected, Supervisor `RUNNING/OK`,
+EventBus `dropped=0`, HTTPS-only remote update, and lab endpoints absent. The decisive
+terminal reconciliation is Aurora issue #777 (`aurora:completed`, exit code 0).

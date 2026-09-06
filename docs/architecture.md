@@ -435,3 +435,43 @@ work task, and network state is not part of eligibility.
 Until DS3231 is validated, Stage 7E uses relative `delay_after_activation` semantics.
 Reboot intentionally re-arms the relative delay from boot-time activation. Wall-clock
 schedules are a Stage 8 time-service concern, not something synthesized from uptime.
+
+## Stage 7E local schedule runtime
+
+Stage 7E adds `LocalScheduleService` above TaskScheduler without changing ownership
+boundaries:
+
+```text
+ConfigurationStore persisted document
+        |
+        v
+semantic validation
+        |
+        v
+post-commit lifecycle activation
+        |
+        v
+LocalScheduleService FSM
+DISABLED -> WAITING -> FIRING -> COMPLETED/FAULT
+        |
+        v
+TASK_ONCE / restartDelayed()
+        |
+        v
+VirtualActuatorComponent
+```
+
+TaskScheduler owns only when the delayed work becomes due. The service owns schedule
+meaning and state; the component owns actuator behavior. The first target is
+`virtual.schedule_output`, so Stage 7E introduces no GPIO coupling.
+
+Physical proof on clean `0.1.39/build 40` established three architectural properties:
+the delayed action can execute before Wi-Fi/MQTT reconnect, persisted delay semantics
+re-arm automatically after reboot/rollback, and clean OTA does not remove local
+configuration. Inactive/completed schedule work remains disabled. Relative delays are
+activation-relative by design; durable civil-time schedules wait for the Stage 8
+RTC/time foundation.
+
+ConfigurationStore invokes lifecycle activation only after releasing its mutex.
+This removes external rule/schedule activation from the critical section while
+preserving verified dual-slot persistence and pointer activation.
