@@ -250,7 +250,7 @@ The first executable persisted rule schema is deliberately narrow:
 Stage 7D supports zero or one executable rule. New configuration is rejected before
 activation when type/binding/hysteresis semantics are unsupported. After a successful
 apply or rollback commit, PersistedRuleLoader activates the committed JSON/revision
-without re-entering the ConfigurationStore mutex and refreshes RuleRuntime eligibility.
+after ConfigurationStore releases its mutex and refreshes RuleRuntime eligibility.
 No Wi-Fi, MQTT or cloud dependency is involved.
 
 `GET /api/rules/persisted` exposes non-secret binding diagnostics: loaded revision,

@@ -332,43 +332,53 @@ String statusJson() {
 
 bool apply(const String& candidateJson, String& error) {
   error = "";
-  ConfigLock lock;
-  if (!lock.locked() || !configReady) {
-    error = "configuration_not_ready";
-    return false;
-  }
-  if (activeRevision == UINT32_MAX) {
-    error = "configuration_revision_exhausted";
-    return false;
-  }
+  ActivatedCallback callback = nullptr;
+  uint32_t callbackRevision = 0;
+  String callbackRaw;
 
-  const uint32_t nextRevision = activeRevision + 1;
-  String canonical;
-  if (!canonicalizeCandidate(candidateJson, nextRevision, canonical, error)) return false;
-
-  if (ruleValidator) {
-    String semanticError;
-    if (!ruleValidator(canonical, semanticError)) {
-      error = semanticError.length() ? semanticError : "configuration_rule_semantic_invalid";
+  {
+    ConfigLock lock;
+    if (!lock.locked() || !configReady) {
+      error = "configuration_not_ready";
       return false;
     }
+    if (activeRevision == UINT32_MAX) {
+      error = "configuration_revision_exhausted";
+      return false;
+    }
+
+    const uint32_t nextRevision = activeRevision + 1;
+    String canonical;
+    if (!canonicalizeCandidate(candidateJson, nextRevision, canonical, error)) return false;
+
+    if (ruleValidator) {
+      String semanticError;
+      if (!ruleValidator(canonical, semanticError)) {
+        error = semanticError.length() ? semanticError : "configuration_rule_semantic_invalid";
+        return false;
+      }
+    }
+
+    const uint8_t nextSlot = activeSlot == 0 ? 1 : 0;
+    String verified;
+    if (!persistSlotVerified(nextSlot, canonical, nextRevision, verified, error)) return false;
+
+    if (configPreferences.putUChar(KEY_ACTIVE, nextSlot) != 1) {
+      error = "configuration_pointer_write_failed";
+      return false;
+    }
+
+    activeSlot = nextSlot;
+    activeRaw = verified;
+    activeRevision = nextRevision;
+    recoveredOnBoot = false;
+    lastResult = "applied";
+    callback = activatedCallback;
+    callbackRevision = activeRevision;
+    callbackRaw = activeRaw;
   }
 
-  const uint8_t nextSlot = activeSlot == 0 ? 1 : 0;
-  String verified;
-  if (!persistSlotVerified(nextSlot, canonical, nextRevision, verified, error)) return false;
-
-  if (configPreferences.putUChar(KEY_ACTIVE, nextSlot) != 1) {
-    error = "configuration_pointer_write_failed";
-    return false;
-  }
-
-  activeSlot = nextSlot;
-  activeRaw = verified;
-  activeRevision = nextRevision;
-  recoveredOnBoot = false;
-  lastResult = "applied";
-  if (activatedCallback) activatedCallback(activeRevision, activeRaw);
+  if (callback) callback(callbackRevision, callbackRaw);
   return true;
 }
 
@@ -381,62 +391,72 @@ void setLifecycleCallbacks(ValidateActiveCallback validator, ActivatedCallback a
 
 bool rollback(String& error) {
   error = "";
-  ConfigLock lock;
-  if (!lock.locked() || !configReady) {
-    error = "configuration_not_ready";
-    return false;
-  }
-  if (activeRevision == UINT32_MAX) {
-    error = "configuration_revision_exhausted";
-    return false;
-  }
+  ActivatedCallback callback = nullptr;
+  uint32_t callbackRevision = 0;
+  String callbackRaw;
 
-  const uint8_t previousSlot = activeSlot == 0 ? 1 : 0;
-  String previousRaw;
-  uint32_t previousRevision = 0;
-  if (!loadSlot(previousSlot, previousRaw, previousRevision)) {
-    error = "configuration_previous_missing";
-    return false;
-  }
-
-  DynamicJsonDocument document(JSON_CAPACITY);
-  String parseError;
-  if (deserializeJson(document, previousRaw) ||
-      !validateDocument(document, true, parseError)) {
-    error = parseError.length() ? parseError : "configuration_previous_invalid";
-    return false;
-  }
-
-  const uint32_t nextRevision = activeRevision + 1;
-  document["revision"] = nextRevision;
-  String rollbackRaw;
-  serializeJson(document, rollbackRaw);
-  if (rollbackRaw.length() == 0 || rollbackRaw.length() > MAX_CONFIG_JSON_BYTES) {
-    error = "configuration_size_invalid";
-    return false;
-  }
-
-  if (ruleValidator) {
-    String semanticError;
-    if (!ruleValidator(rollbackRaw, semanticError)) {
-      error = semanticError.length() ? semanticError : "configuration_rule_semantic_invalid";
+  {
+    ConfigLock lock;
+    if (!lock.locked() || !configReady) {
+      error = "configuration_not_ready";
       return false;
     }
+    if (activeRevision == UINT32_MAX) {
+      error = "configuration_revision_exhausted";
+      return false;
+    }
+
+    const uint8_t previousSlot = activeSlot == 0 ? 1 : 0;
+    String previousRaw;
+    uint32_t previousRevision = 0;
+    if (!loadSlot(previousSlot, previousRaw, previousRevision)) {
+      error = "configuration_previous_missing";
+      return false;
+    }
+
+    DynamicJsonDocument document(JSON_CAPACITY);
+    String parseError;
+    if (deserializeJson(document, previousRaw) ||
+        !validateDocument(document, true, parseError)) {
+      error = parseError.length() ? parseError : "configuration_previous_invalid";
+      return false;
+    }
+
+    const uint32_t nextRevision = activeRevision + 1;
+    document["revision"] = nextRevision;
+    String rollbackRaw;
+    serializeJson(document, rollbackRaw);
+    if (rollbackRaw.length() == 0 || rollbackRaw.length() > MAX_CONFIG_JSON_BYTES) {
+      error = "configuration_size_invalid";
+      return false;
+    }
+
+    if (ruleValidator) {
+      String semanticError;
+      if (!ruleValidator(rollbackRaw, semanticError)) {
+        error = semanticError.length() ? semanticError : "configuration_rule_semantic_invalid";
+        return false;
+      }
+    }
+
+    String verified;
+    if (!persistSlotVerified(previousSlot, rollbackRaw, nextRevision, verified, error)) return false;
+    if (configPreferences.putUChar(KEY_ACTIVE, previousSlot) != 1) {
+      error = "configuration_pointer_write_failed";
+      return false;
+    }
+
+    activeSlot = previousSlot;
+    activeRaw = verified;
+    activeRevision = nextRevision;
+    recoveredOnBoot = false;
+    lastResult = "rolled_back";
+    callback = activatedCallback;
+    callbackRevision = activeRevision;
+    callbackRaw = activeRaw;
   }
 
-  String verified;
-  if (!persistSlotVerified(previousSlot, rollbackRaw, nextRevision, verified, error)) return false;
-  if (configPreferences.putUChar(KEY_ACTIVE, previousSlot) != 1) {
-    error = "configuration_pointer_write_failed";
-    return false;
-  }
-
-  activeSlot = previousSlot;
-  activeRaw = verified;
-  activeRevision = nextRevision;
-  recoveredOnBoot = false;
-  lastResult = "rolled_back";
-  if (activatedCallback) activatedCallback(activeRevision, activeRaw);
+  if (callback) callback(callbackRevision, callbackRaw);
   return true;
 }
 
