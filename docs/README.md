@@ -58,6 +58,8 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Stage 7C TaskScheduler/EventBus one-shot rule runtime physically validated, including offline execution
 - [x] Stage 7D persisted rule binding + boot/apply/rollback lifecycle physically validated
 - [x] Stage 7E local persisted delayed-action service; physical offline/reboot/rollback/clean-OTA proof validated
+- [x] Stage 7F all five dependency/fault policies + recovery physically validated
+- [x] Stage 7 closed on clean `0.1.41/build 42`
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -67,34 +69,15 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-06 after Stage 7E closure:
+Validated on the physical device on 2026-09-06 after Stage 7 closure:
 
-- hostname: `proj-esp32`
-- mDNS: `proj-esp32.local`
-- device ID: `10A2CCEF49C0`
-- hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.39`, build `40`, channel `dev`
-- running OTA partition: `app0`
-- boot partition: `app0`
-- next update partition: `app1`
-- native image state: `VALID`
-- application FSM/system: `ONLINE`
-- Wi-Fi: connected
-- MQTT: connected over TLS
-- `connectivity`: `ONLINE/OK`
-- Supervisor: `RUNNING/OK`
-- EventBus: `dropped=0`
-- Wi-Fi scheduler: coordinator enabled; reconnect work task disabled while healthy
-- MQTT scheduler: coordinator enabled; reconnect work task disabled while connected; telemetry task enabled
-- PubSubClient payload buffer: explicit 4096 bytes; full status telemetry >2 KiB physically proven
-- remote OTA policy: HTTPS-only
-- lab-only Wi-Fi/MQTT/rule mutation endpoints: absent from the clean image
-- ConfigurationStore: revision `10`, persisted rule `persisted.demo.a`, persisted schedule `persisted.demo.delay.clean`
-- RuleEngine: configured/enabled from persisted configuration
-- RuleRuntime: `ARMED`; rule work task disabled and no pending work until input exists
-- LocalScheduleService: revision `10`, schedule completed, schedule work task disabled, `virtual.schedule_output=ON`
+- firmware `0.1.41/build 42`, `app0/VALID`, `ONLINE`;
+- Wi-Fi + MQTT/TLS connected; Supervisor `RUNNING/OK`; EventBus `dropped=0`;
+- ConfigurationStore revision 10; rule `persisted.demo.a`; schedule `persisted.demo.delay.clean`;
+- RuleRuntime `ARMED`, default/legacy `SAFE_OFF`, work task disabled while idle;
+- schedule completed with work task disabled; remote OTA HTTPS-only; lab endpoints absent.
 
-Stages 7A-7D remain validated. **Stage 7E is now physically validated:** persisted relative delayed actions are semantically validated before commit, execute locally while connectivity is absent, re-arm automatically after reboot, follow monotonic rollback, and survive clean signed A/B OTA. Clean `0.1.39/build 40` holds configuration revision 10 with `persisted.demo.a` and `persisted.demo.delay.clean`; the schedule completed locally and its one-shot task returned to disabled. Stage 7 remains open only for explicit dependency/fault policies before real actuator GPIO is introduced.
+**Stage 7 is closed and physically validated (7A-7F).** The final proof covered all five actuator dependency/fault policies and recovery without GPIO.
 
 ## OTA partition layout
 

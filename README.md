@@ -25,11 +25,11 @@ The project is designed to be driven both interactively from VS Code and remotel
 - Local project path: `/home/kernelpanic/Projects/proj-esp32`
 - GitHub: `kernelpanic2015/proj-esp32`
 
-## Validated baseline — 2026-09-05
+## Validated baseline — 2026-09-06
 
-**Current physical baseline:** `0.1.39/build 40`, `app0`, native OTA `VALID`, application `ONLINE`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. ConfigurationStore is revision 10 with persisted rule `persisted.demo.a` and persisted delayed action `persisted.demo.delay.clean`; RuleEngine is configured/enabled, RuleRuntime is `ARMED`, and the clean schedule completed with its `TASK_ONCE` work task disabled afterward. Lab mutation endpoints are absent.
+**Current physical baseline:** `0.1.41/build 42`, `app0/VALID`, application `ONLINE`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected, EventBus `dropped=0`, ConfigurationStore revision 10, persisted rule `persisted.demo.a`, persisted schedule `persisted.demo.delay.clean`, and legacy/default actuator fault policy `SAFE_OFF`. Lab mutation endpoints are absent.
 
-**Stages 7A-7E are physically validated.** Stage 7E proved that a persisted relative delayed action can fire while Wi-Fi/MQTT are unavailable, re-arm after reboot, follow monotonic rollback and survive clean signed A/B OTA. Its FSM owns schedule meaning/state, TaskScheduler owns only due-time execution, and the work task is disabled except while a valid action is waiting. Stage 7 remains open for dependency/fault policies; wall-clock schedules remain deferred until the DS3231 time foundation.
+**Stage 7 is physically validated and closed (7A-7F).** Stage 7F proved `SAFE_OFF`, `SAFE_ON`, `KEEP_LAST_STATE`, `DISABLE_RULE`, and `ALARM_ONLY`, recovery for every policy, and rejection of unsupported policy without revision advance. No physical actuator GPIO was introduced.
 
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 

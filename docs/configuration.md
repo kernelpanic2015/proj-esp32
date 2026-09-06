@@ -364,3 +364,9 @@ A persisted hysteresis rule may include an optional `fault_policy`. Supported va
 Legacy Stage 7D/7E documents that omit `fault_policy` remain valid and resolve to the conservative `SAFE_OFF` default. Invalid policy names are rejected by persisted semantic validation before ConfigurationStore advances the active slot/revision.
 
 The policy guard consumes component health; it never accesses GPIO. RuleEngine still computes desired state only from valid input, RuleRuntime coordinates dependency policy and evaluation, and the actuator component/driver remains the only future path to physical hardware.
+
+## Stage 7F physical validation
+
+Controlled `0.1.40-remote-test/build 41` proved `SAFE_OFF`, `SAFE_ON`, `KEEP_LAST_STATE`, `DISABLE_RULE`, and `ALARM_ONLY` against injected virtual dependency faults, including recovery of every policy. A bad policy was rejected with HTTP 400 while ConfigurationStore remained revision 10. Clean signed `0.1.41/build 42` then reached `app0/PENDING_VERIFY -> VALID`, retained revision 10, `persisted.demo.a`, `persisted.demo.delay.clean`, and legacy/default `SAFE_OFF`; Supervisor remained `RUNNING/OK`, EventBus `dropped=0`, HTTPS-only update policy returned, and lab endpoints were absent. Wrapper #782 recorded every success marker; read-only Aurora reconciliation #784 completed successfully.
+
+**Stage 7: VALIDATED AND CLOSED.** Physical actuator GPIO remains outside Stage 7.

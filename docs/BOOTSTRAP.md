@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-06
 
-Current physical device state after Stage 7E persisted delayed-action closure:
+Current physical device state after Stage 7 closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.39`
-- build: `40`
+- firmware: `0.1.41`
+- build: `42`
 - channel: `dev`
 - running partition: `app0`
 - boot partition: `app0`
@@ -124,7 +124,11 @@ Normal build remains within the 1728 KiB OTA slot at roughly 17.4% static RAM an
 - clean image is HTTPS-only; lab Wi-Fi/rule mutation endpoints return HTTP 404;
 - Supervisor `RUNNING/OK`; EventBus `dropped=0`; Wi-Fi + MQTT/TLS healthy.
 
-Stage 7 remains open only for explicit dependency/fault policies before real actuator GPIO is introduced. Relative delay semantics intentionally restart from activation after reboot; wall-clock/calendar schedules remain deferred until validated RTC/timekeeping.
+## Stage 7F dependency/fault policies — validated
+
+All five persisted policies (`SAFE_OFF`, `SAFE_ON`, `KEEP_LAST_STATE`, `DISABLE_RULE`, `ALARM_ONLY`) and recovery were physically proven without GPIO. Invalid policy is rejected before revision advance. Clean baseline is `0.1.41/build 42`, `app0/VALID`, ConfigurationStore revision 10, Supervisor `RUNNING/OK`, EventBus `dropped=0`, HTTPS-only, lab endpoints absent.
+
+**Stage 7 is VALIDATED AND CLOSED.** Wall-clock/calendar schedules remain deferred until validated RTC/timekeeping.
 
 ## Flash layout — validated
 
@@ -361,9 +365,9 @@ The firmware base must remain autonomous and fault-tolerant:
 
 ## Immediate next steps
 
-1. Keep the clean Stage 7E baseline `0.1.39/build 40` intact and start the remaining **Stage 7 dependency/fault policy** design before any real actuator GPIO is introduced.
-2. Define explicit dependent-output policies such as `SAFE_OFF`, `SAFE_ON`, `KEEP_LAST_STATE`, `DISABLE_RULE` and `ALARM_ONLY`, preserving component-level fault isolation.
-3. Preserve the runtime ownership model: TaskScheduler = timing, FSM = state, ConfigurationStore = persisted desired configuration, EventBus = events, RuleEngine = consequence, Component = responsibility, Driver = hardware.
+1. Keep the clean closed-Stage-7 baseline `0.1.41/build 42` intact.
+2. Start **Stage 8** with DS3231 time service and NTP synchronization/fallback semantics.
+3. After timekeeping validation, confirm TFT/touch/SD hardware and pin mapping before locking GPIO assignments.
 4. Keep the cross-cutting network-hardening backlog: replace `setInsecure()` with CA validation, then add MQTT LWT and backoff/jitter.
 5. Do not add calendar/cron semantics until the Stage 8 RTC/time foundation exists; the validated Stage 7E delay is intentionally activation-relative.
 
