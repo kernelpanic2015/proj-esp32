@@ -19,6 +19,17 @@ Baseline:
 
 The baseline identifies a reusable source contract, not a promise that every deployment is production-hardened. Security and reliability hardening may continue in later Core releases.
 
+## Machine and application contracts
+
+The human-readable Core contract in this document has two canonical companions:
+
+- `core-manifest.json` — machine/agent-readable identity, baseline commit, validated capabilities, architectural ownership, application boundary and known Core hardening backlog;
+- `docs/APPLICATION_BOOTSTRAP.md` — template/contract for starting a derived application with explicit hardware, GPIO, safety, telemetry, versioning and validation decisions.
+
+Agents and automation should prefer `core-manifest.json` for structured discovery, then use this document and the subsystem documentation for semantics and operating detail.
+
+A new application should declare its Core baseline before application-specific development begins.
+
 ## What belongs to the Core
 
 The Core owns reusable platform behavior that should remain common across applications:
@@ -114,13 +125,14 @@ A new ChatGPT conversation does not need the development history of Stages 0-7.
 
 For Core work, read in this order:
 
-1. `docs/CORE_BASELINE.md`
-2. `docs/BOOTSTRAP.md`
-3. `docs/architecture.md`
-4. `docs/operations.md`
-5. the specific subsystem document needed for the task.
+1. `core-manifest.json`
+2. `docs/CORE_BASELINE.md`
+3. `docs/BOOTSTRAP.md`
+4. `docs/architecture.md`
+5. `docs/operations.md`
+6. the specific subsystem document needed for the task.
 
-For a new application, first state:
+For a new application, read `docs/APPLICATION_BOOTSTRAP.md` and first state:
 
 - application/repository name;
 - Core baseline it is based on;
