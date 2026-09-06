@@ -1,8 +1,10 @@
 # proj-esp32
 
-Firmware laboratory for the user's **NodeMCU-32S / ESP-WROOM-32** board, developed in **C++ with PlatformIO** on the notebook `kpnote`.
+Reusable ESP32 firmware **Core Foundation** for the user's **NodeMCU-32S / ESP-WROOM-32** board, developed in **C++ with PlatformIO** on the notebook `kpnote`.
 
-The project is designed to be driven both interactively from VS Code and remotely through the Aurora command plane.
+Stages 0-7 define the validated reusable Core. Application-specific hardware and behavior should branch/fork from a validated Core baseline rather than extending one mandatory hardware roadmap. The project is designed to be driven both interactively from VS Code and remotely through the Aurora command plane.
+
+**Current Core baseline:** `core-v1.0.0` -> firmware `0.1.41/build 42`. See [`docs/CORE_BASELINE.md`](docs/CORE_BASELINE.md).
 
 ## Current hardware
 
@@ -52,9 +54,9 @@ Validated runtime services:
 
 Broker credentials and Wi-Fi credentials are persisted locally on the ESP32 and are not committed to this repository.
 
-## Firmware direction
+## Core direction
 
-The base firmware is evolving toward a reusable edge-device runtime with:
+The base firmware **is the reusable edge-device runtime**. Future applications compose or extend it with:
 
 - finite-state machine (`jonblack/arduino-fsm`)
 - double-reset recovery/config mode (`ESP_DoubleResetDetector`)
@@ -63,8 +65,10 @@ The base firmware is evolving toward a reusable edge-device runtime with:
 - browser WebSerial console
 - MQTT/TLS client (`PubSubClient` + `WiFiClientSecure`)
 - mDNS hostname
-- OTA updates
-- later: TFT display, XPT2046 resistive touch, sensors/relays, telemetry and MCP/AI integration
+- signed A/B OTA updates
+- application-specific modules such as TFT display, XPT2046 resistive touch, sensors, relays, telemetry views and MCP/AI integrations
+
+Core `main` should evolve only through reusable fixes, hardening, compatibility work and telemetry-driven platform improvements. Applications own their own hardware-specific roadmap and versioning.
 
 ## Console workflow
 
@@ -78,4 +82,4 @@ For non-interactive runtime capture under Aurora, prefer `scripts/capture_serial
 
 ## Documentation
 
-Start at [`docs/README.md`](docs/README.md). New chats should read [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md) first. MQTT/RabbitMQ validation is documented in [`docs/mqtt.md`](docs/mqtt.md).
+Start at [`docs/CORE_BASELINE.md`](docs/CORE_BASELINE.md), then [`docs/BOOTSTRAP.md`](docs/BOOTSTRAP.md). [`docs/README.md`](docs/README.md) is the complete documentation index. New application chats should identify the Core baseline they derive from before defining external hardware. MQTT/RabbitMQ validation is documented in [`docs/mqtt.md`](docs/mqtt.md).
