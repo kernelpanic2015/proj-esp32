@@ -87,8 +87,8 @@ wait_completed() {
 echo '=== PRECHECK CLEAN 7B ===' >> "$OUT"
 S=$(get_status)
 echo "PRE_STATUS=$S" >> "$OUT"
-echo "$S" | grep -Fq '"version":"0.1.35"'
-echo "$S" | grep -Fq '"build":36'
+echo "$S" | grep -Fq '"version":"0.1.33"'
+echo "$S" | grep -Fq '"build":34'
 echo "$S" | grep -Fq '"running_partition":"app0"'
 echo "$S" | grep -Fq '"image_state":"VALID"'
 echo "$S" | grep -Fq '"wifi":true'
