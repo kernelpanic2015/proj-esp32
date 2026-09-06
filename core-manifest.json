@@ -1,6 +1,5 @@
 {
-  "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "schema_id": "proj-esp32.core-manifest.v1",
+  "schema": "proj-esp32.core-manifest.v1",
   "manifest_version": 1,
   "core": {
     "name": "proj-esp32 Core Foundation",
