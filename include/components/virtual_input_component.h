@@ -19,11 +19,13 @@ class VirtualInputComponent : public RuntimeCore::Component {
   bool setValue(float value);
   bool hasValue() const { return hasValue_; }
   float value() const { return value_; }
+  bool injectFault(const char* faultCode = "virtual_fault");
+  void recover();
   void disable();
   String statusJson() const;
 
  private:
-  enum class State : uint8_t { Disabled, Ready };
+  enum class State : uint8_t { Disabled, Ready, Fault };
   void transitionTo(State nextState, RuntimeCore::HealthState nextHealth,
                     const char* faultCode);
 

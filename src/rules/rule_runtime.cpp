@@ -14,6 +14,7 @@ RuleRuntime::RuleRuntime(Scheduler& scheduler,
                          const char* inputSourceId,
                          BoolProvider inputReady,
                          FloatProvider inputValue,
+                         HealthProvider dependencyHealth,
                          BoolProvider outputState,
                          ApplyDesired applyDesired)
     : scheduler_(scheduler),
@@ -22,6 +23,7 @@ RuleRuntime::RuleRuntime(Scheduler& scheduler,
       inputSourceId_(inputSourceId ? inputSourceId : ""),
       inputReady_(inputReady),
       inputValue_(inputValue),
+      dependencyHealth_(dependencyHealth),
       outputState_(outputState),
       applyDesired_(applyDesired),
       evaluationTask_(TASK_IMMEDIATE, TASK_ONCE, evaluationTaskCallback,
@@ -72,17 +74,35 @@ void RuleRuntime::enterEvaluating() {
   if (active_) active_->setState(RuntimeState::Evaluating);
 }
 
+RuntimeCore::HealthState RuleRuntime::dependencyHealth() const {
+  return dependencyHealth_ ? dependencyHealth_() : RuntimeCore::HealthState::Ok;
+}
+
+bool RuleRuntime::dependencyHealthy() const {
+  return dependencyHealth() == RuntimeCore::HealthState::Ok;
+}
+
+void RuleRuntime::setFaultPolicy(ActuatorFaultPolicy policy) {
+  faultPolicy_ = policy;
+  refreshEligibility();
+}
+
 void RuleRuntime::refreshEligibility() {
   if (!started_) return;
 
-  if (!engine_.enabled()) {
+  const bool dependencySuspends =
+      faultPolicy_ == ActuatorFaultPolicy::DisableRule && !dependencyHealthy();
+
+  if (!engine_.enabled() || dependencySuspends) {
     pending_ = false;
     if (evaluationTask_.isEnabled()) evaluationTask_.disable();
     if (state_ != RuntimeState::Disabled) {
       machine_.trigger(EventDisarm);
       machine_.run_machine();
     }
-    if (!engine_.configured()) {
+    if (dependencySuspends) {
+      lastRequestResult_ = "dependency_fault_disable_rule";
+    } else if (!engine_.configured()) {
       lastRequestResult_ = "no_active_rule";
     } else {
       lastRequestResult_ = "rule_disabled";
@@ -106,7 +126,14 @@ bool RuleRuntime::requestEvaluation(const char* reason) {
     lastRequestResult_ = "rule_disabled";
     return false;
   }
-  if (!inputReady_ || !inputReady_()) {
+
+  const bool healthy = dependencyHealthy();
+  if (!healthy && faultPolicy_ == ActuatorFaultPolicy::DisableRule) {
+    ++rejectedCount_;
+    lastRequestResult_ = "dependency_fault_disable_rule";
+    return false;
+  }
+  if (healthy && (!inputReady_ || !inputReady_())) {
     ++rejectedCount_;
     lastRequestResult_ = "input_not_ready";
     return false;
@@ -141,13 +168,16 @@ void RuleRuntime::eventHandler(const RuntimeCore::Event& event) {
 }
 
 void RuleRuntime::handleEvent(const RuntimeCore::Event& event) {
-  if (event.type != static_cast<uint16_t>(RuntimeCore::RuntimeEventType::InputValueChanged)) {
-    return;
-  }
   if (inputSourceId_.length() && strcmp(event.source, inputSourceId_.c_str()) != 0) {
     return;
   }
-  requestEvaluation("input_event");
+  if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::InputValueChanged)) {
+    requestEvaluation("input_event");
+    return;
+  }
+  if (event.type == static_cast<uint16_t>(RuntimeCore::RuntimeEventType::ComponentHealthChanged)) {
+    requestEvaluation("dependency_health");
+  }
 }
 
 void RuleRuntime::evaluationTaskCallback() {
@@ -162,7 +192,56 @@ void RuleRuntime::executeEvaluation() {
     refreshEligibility();
     return;
   }
-  if (!inputReady_ || !inputReady_() || !inputValue_ || !outputState_ || !applyDesired_) {
+  if (!outputState_ || !applyDesired_) {
+    ++rejectedCount_;
+    lastRunResult_ = "runtime_provider_unavailable";
+    return;
+  }
+
+  const RuntimeCore::HealthState health = dependencyHealth();
+  const bool current = outputState_();
+
+  if (health != RuntimeCore::HealthState::Ok) {
+    const ActuatorFaultResolution resolution =
+        resolveActuatorFaultPolicy(faultPolicy_, current);
+    ++policyActionCount_;
+    lastPolicyMs_ = millis();
+    lastPolicyResult_ = actuatorFaultPolicyName(faultPolicy_);
+
+    if (resolution.suspendRule) {
+      ++rejectedCount_;
+      lastRunResult_ = "fault_policy:DISABLE_RULE";
+      refreshEligibility();
+      lastRunMs_ = millis();
+      return;
+    }
+
+    machine_.trigger(EventEvaluate);
+    machine_.run_machine();
+
+    if (resolution.applyDesired) {
+      if (!applyDesired_(resolution.desiredOn)) {
+        ++rejectedCount_;
+        lastRunResult_ = String("fault_policy_apply_failed:") +
+                         actuatorFaultPolicyName(faultPolicy_);
+      } else {
+        lastRunResult_ = String("fault_policy:") +
+                         actuatorFaultPolicyName(faultPolicy_);
+      }
+    } else if (resolution.alarmOnly) {
+      ++alarmCount_;
+      lastRunResult_ = "fault_policy:ALARM_ONLY";
+    } else {
+      lastRunResult_ = "fault_policy:KEEP_LAST_STATE";
+    }
+
+    lastRunMs_ = millis();
+    machine_.trigger(EventDone);
+    machine_.run_machine();
+    return;
+  }
+
+  if (!inputReady_ || !inputReady_() || !inputValue_) {
     ++rejectedCount_;
     lastRunResult_ = "runtime_provider_unavailable";
     return;
@@ -172,7 +251,6 @@ void RuleRuntime::executeEvaluation() {
   machine_.run_machine();
 
   const float input = inputValue_();
-  const bool current = outputState_();
   bool desired = current;
   RuleDecision decision = RuleDecision::None;
   String error;
@@ -215,18 +293,27 @@ String RuleRuntime::statusJson() const {
   json += "\"state\":\"" + String(stateName()) + "\",";
   json += "\"active_rule\":" + String(engine_.enabled() ? "true" : "false") + ",";
   json += "\"input_source\":\"" + inputSourceId_ + "\",";
+  json += "\"fault_policy\":\"" + String(actuatorFaultPolicyName(faultPolicy_)) + "\",";
+  json += "\"dependency_health\":\"" +
+          String(RuntimeCore::healthStateName(dependencyHealth())) + "\",";
+  json += "\"dependency_suspended\":" +
+          String((faultPolicy_ == ActuatorFaultPolicy::DisableRule && !dependencyHealthy()) ? "true" : "false") + ",";
   json += "\"work_task_enabled\":" + String(evaluationTask_.isEnabled() ? "true" : "false") + ",";
   json += "\"pending\":" + String(pending_ ? "true" : "false") + ",";
   json += "\"last_transition_ms\":" + String(lastTransitionMs_) + ",";
   json += "\"last_request_ms\":" + String(lastRequestMs_) + ",";
   json += "\"last_run_ms\":" + String(lastRunMs_) + ",";
+  json += "\"last_policy_ms\":" + String(lastPolicyMs_) + ",";
   json += "\"request_count\":" + String(requestCount_) + ",";
   json += "\"scheduled_count\":" + String(scheduledCount_) + ",";
   json += "\"coalesced_count\":" + String(coalescedCount_) + ",";
   json += "\"completed_count\":" + String(completedCount_) + ",";
   json += "\"rejected_count\":" + String(rejectedCount_) + ",";
+  json += "\"policy_action_count\":" + String(policyActionCount_) + ",";
+  json += "\"alarm_count\":" + String(alarmCount_) + ",";
   json += "\"last_request_result\":\"" + lastRequestResult_ + "\",";
-  json += "\"last_run_result\":\"" + lastRunResult_ + "\"";
+  json += "\"last_run_result\":\"" + lastRunResult_ + "\",";
+  json += "\"last_policy_result\":\"" + lastPolicyResult_ + "\"";
   json += "}";
   return json;
 }

@@ -72,11 +72,12 @@ Components::VirtualActuatorComponent virtualScheduleOutput(runtimeEvents, "virtu
 
 bool ruleInputReady();
 float ruleInputValue();
+RuntimeCore::HealthState ruleDependencyHealth();
 bool ruleOutputState();
 bool ruleApplyDesired(bool desiredOn);
 Rules::RuleRuntime ruleRuntime(cooperativeScheduler, runtimeEvents, ruleEngine,
                                "virtual.temperature", ruleInputReady, ruleInputValue,
-                               ruleOutputState, ruleApplyDesired);
+                               ruleDependencyHealth, ruleOutputState, ruleApplyDesired);
 Rules::PersistedRuleLoader persistedRuleLoader(ruleEngine, ruleRuntime);
 bool scheduleApplyDesired(bool desiredOn);
 Schedules::LocalScheduleService localScheduleService(cooperativeScheduler, scheduleApplyDesired);
@@ -291,6 +292,9 @@ bool runtimeMqttConfigured() {
 
 bool ruleInputReady() { return virtualTemperature.hasValue(); }
 float ruleInputValue() { return virtualTemperature.value(); }
+RuntimeCore::HealthState ruleDependencyHealth() {
+  return virtualTemperature.health().state;
+}
 bool ruleOutputState() { return virtualHeater.isOn(); }
 bool ruleApplyDesired(bool desiredOn) { return virtualHeater.applyDesired(desiredOn); }
 
@@ -959,10 +963,43 @@ void startNetworkServices() {
 
   server.on("/api/test/rules/reset", HTTP_POST, [](AsyncWebServerRequest* request) {
     ruleEngine.clear();
+    ruleRuntime.setFaultPolicy(Rules::ActuatorFaultPolicy::SafeOff);
     ruleRuntime.refreshEligibility();
     virtualTemperature.disable();
     virtualHeater.disable();
     request->send(200, "application/json", "{\"reset\":true}");
+  });
+#endif
+
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  server.on("/api/test/rules/fault-policy", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!request->hasParam("policy", true)) {
+      request->send(400, "application/json", "{\"error\":\"policy_required\"}");
+      return;
+    }
+    Rules::ActuatorFaultPolicy policy;
+    if (!Rules::parseActuatorFaultPolicy(request->getParam("policy", true)->value(), policy)) {
+      request->send(400, "application/json", "{\"error\":\"policy_unsupported\"}");
+      return;
+    }
+    ruleRuntime.setFaultPolicy(policy);
+    ruleRuntime.requestEvaluation("policy_test");
+    request->send(200, "application/json", ruleRuntime.statusJson());
+  });
+
+  server.on("/api/test/rules/fault", HTTP_POST, [](AsyncWebServerRequest* request) {
+    String code = request->hasParam("code", true)
+                      ? request->getParam("code", true)->value()
+                      : String("virtual_sensor_fault");
+    code.trim();
+    if (!code.length()) code = "virtual_sensor_fault";
+    virtualTemperature.injectFault(code.c_str());
+    request->send(202, "application/json", virtualTemperature.statusJson());
+  });
+
+  server.on("/api/test/rules/recover", HTTP_POST, [](AsyncWebServerRequest* request) {
+    virtualTemperature.recover();
+    request->send(202, "application/json", virtualTemperature.statusJson());
   });
 #endif
 

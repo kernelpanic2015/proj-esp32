@@ -349,3 +349,18 @@ should use an explicit result/compensation contract rather than pretending the
 post-commit callback itself is transactional.
 
 **Stage 7E: VALIDATED.**
+
+
+## Stage 7F — persisted actuator fault policy
+
+A persisted hysteresis rule may include an optional `fault_policy`. Supported values are:
+
+- `SAFE_OFF` — force the dependent output OFF while the input dependency is not healthy;
+- `SAFE_ON` — force the dependent output ON;
+- `KEEP_LAST_STATE` — freeze the current output state and do not evaluate stale input;
+- `DISABLE_RULE` — suspend RuleRuntime while the dependency is unhealthy and automatically re-arm after recovery;
+- `ALARM_ONLY` — record the policy action/alarm without changing the output.
+
+Legacy Stage 7D/7E documents that omit `fault_policy` remain valid and resolve to the conservative `SAFE_OFF` default. Invalid policy names are rejected by persisted semantic validation before ConfigurationStore advances the active slot/revision.
+
+The policy guard consumes component health; it never accesses GPIO. RuleEngine still computes desired state only from valid input, RuleRuntime coordinates dependency policy and evaluation, and the actuator component/driver remains the only future path to physical hardware.

@@ -475,3 +475,22 @@ RTC/time foundation.
 ConfigurationStore invokes lifecycle activation only after releasing its mutex.
 This removes external rule/schedule activation from the critical section while
 preserving verified dual-slot persistence and pointer activation.
+
+
+## Stage 7F — dependency/fault policy boundary
+
+Before any real actuator GPIO is introduced, dependent outputs have an explicit health-policy boundary:
+
+```text
+Sensor/Dependency Component health
+        -> RuleRuntime dependency guard
+        -> SAFE_OFF | SAFE_ON | KEEP_LAST_STATE | DISABLE_RULE | ALARM_ONLY
+        -> desired/held/suspended action
+        -> Actuator Component
+        -> future Driver
+        -> future GPIO
+```
+
+Only `HealthState::Ok` permits normal rule evaluation. `DEGRADED`, `FAULT`, `RECOVERING` and `DISABLED` are treated as unavailable for rule input and invoke the configured policy. A dependency health event is enough to schedule the policy path; it does not require a fresh sensor value or network connectivity.
+
+`DISABLE_RULE` means runtime suspension, not destructive configuration mutation: the persisted rule remains configured and the runtime re-arms when dependency health returns to `OK`. `ALARM_ONLY` preserves output state and increments runtime alarm observability. This keeps fault isolation local to the dependent rule/output and does not stop unrelated components.

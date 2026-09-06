@@ -22,6 +22,7 @@ const char* VirtualInputComponent::stateName() const {
   switch (state_) {
     case State::Disabled: return "DISABLED";
     case State::Ready: return "READY";
+    case State::Fault: return "FAULT";
   }
   return "UNKNOWN";
 }
@@ -63,6 +64,22 @@ bool VirtualInputComponent::setValue(float value) {
   events_.post(static_cast<uint16_t>(RuntimeCore::RuntimeEventType::InputValueChanged),
                id(), milliValue);
   return true;
+}
+
+bool VirtualInputComponent::injectFault(const char* faultCode) {
+  String code = faultCode ? String(faultCode) : String();
+  code.trim();
+  if (!code.length()) code = "virtual_fault";
+  transitionTo(State::Fault, RuntimeCore::HealthState::Fault, code.c_str());
+  return true;
+}
+
+void VirtualInputComponent::recover() {
+  if (hasValue_) {
+    transitionTo(State::Ready, RuntimeCore::HealthState::Ok, "");
+  } else {
+    transitionTo(State::Disabled, RuntimeCore::HealthState::Disabled, "");
+  }
 }
 
 void VirtualInputComponent::disable() {

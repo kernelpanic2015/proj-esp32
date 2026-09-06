@@ -17,11 +17,13 @@ bool supportedNumber(JsonVariant value) {
 }
 
 bool PersistedRuleLoader::parseDocument(const String& raw, HysteresisRule& rule,
+                                        ActuatorFaultPolicy& faultPolicy,
                                         bool& found, uint32_t& revision,
                                         String& error) const {
   error = "";
   found = false;
   revision = 0;
+  faultPolicy = ActuatorFaultPolicy::SafeOff;
   DynamicJsonDocument doc(JSON_CAPACITY);
   if (deserializeJson(doc, raw)) {
     error = "persisted_rule_config_json_invalid";
@@ -35,7 +37,7 @@ bool PersistedRuleLoader::parseDocument(const String& raw, HysteresisRule& rule,
   JsonArray rules = doc["rules"].as<JsonArray>();
   if (rules.size() == 0) return true;
   if (rules.size() > 1) {
-    error = "persisted_rule_multiple_not_supported_stage7d";
+    error = "persisted_rule_multiple_not_supported_stage7";
     return false;
   }
 
@@ -68,6 +70,16 @@ bool PersistedRuleLoader::parseDocument(const String& raw, HysteresisRule& rule,
     error = "persisted_rule_enabled_invalid";
     return false;
   }
+  if (object.containsKey("fault_policy")) {
+    if (!object["fault_policy"].is<const char*>()) {
+      error = "persisted_rule_fault_policy_invalid";
+      return false;
+    }
+    if (!parseActuatorFaultPolicy(object["fault_policy"].as<String>(), faultPolicy)) {
+      error = "persisted_rule_fault_policy_unsupported";
+      return false;
+    }
+  }
 
   rule.id = id;
   rule.enabled = object["enabled"] | true;
@@ -96,19 +108,24 @@ bool PersistedRuleLoader::parseDocument(const String& raw, HysteresisRule& rule,
 
 bool PersistedRuleLoader::validateDocument(const String& raw, String& error) const {
   HysteresisRule rule;
+  ActuatorFaultPolicy faultPolicy = ActuatorFaultPolicy::SafeOff;
   bool found = false;
   uint32_t revision = 0;
-  return parseDocument(raw, rule, found, revision, error);
+  return parseDocument(raw, rule, faultPolicy, found, revision, error);
 }
 
-bool PersistedRuleLoader::applyParsed(const HysteresisRule& rule, bool found,
-                                      uint32_t revision, String& error) {
+bool PersistedRuleLoader::applyParsed(const HysteresisRule& rule,
+                                      ActuatorFaultPolicy faultPolicy,
+                                      bool found, uint32_t revision,
+                                      String& error) {
   error = "";
   if (!found) {
     engine_.clear();
+    runtime_.setFaultPolicy(ActuatorFaultPolicy::SafeOff);
     runtime_.refreshEligibility();
     loadedRevision_ = revision;
     loadedRuleId_ = "";
+    loadedFaultPolicy_ = ActuatorFaultPolicy::SafeOff;
     lastResult_ = "no_rules";
     return true;
   }
@@ -117,9 +134,12 @@ bool PersistedRuleLoader::applyParsed(const HysteresisRule& rule, bool found,
     lastResult_ = error.length() ? error : "persisted_rule_semantic_invalid";
     return false;
   }
+  runtime_.setFaultPolicy(faultPolicy);
   runtime_.refreshEligibility();
+  runtime_.requestEvaluation("config_activation");
   loadedRevision_ = revision;
   loadedRuleId_ = rule.id;
+  loadedFaultPolicy_ = faultPolicy;
   lastResult_ = rule.enabled ? "loaded_enabled" : "loaded_disabled";
   return true;
 }
@@ -127,9 +147,10 @@ bool PersistedRuleLoader::applyParsed(const HysteresisRule& rule, bool found,
 bool PersistedRuleLoader::activateDocument(const String& raw, uint32_t revision,
                                            String& error) {
   HysteresisRule rule;
+  ActuatorFaultPolicy faultPolicy = ActuatorFaultPolicy::SafeOff;
   bool found = false;
   uint32_t parsedRevision = 0;
-  if (!parseDocument(raw, rule, found, parsedRevision, error)) {
+  if (!parseDocument(raw, rule, faultPolicy, found, parsedRevision, error)) {
     loadedRevision_ = revision;
     lastResult_ = error;
     return false;
@@ -140,7 +161,7 @@ bool PersistedRuleLoader::activateDocument(const String& raw, uint32_t revision,
     lastResult_ = error;
     return false;
   }
-  return applyParsed(rule, found, revision, error);
+  return applyParsed(rule, faultPolicy, found, revision, error);
 }
 
 bool PersistedRuleLoader::reload(String& error) {
@@ -158,6 +179,8 @@ String PersistedRuleLoader::statusJson() const {
   String json = "{";
   json += "\"loaded_revision\":" + String(loadedRevision_) + ",";
   json += "\"loaded_rule_id\":\"" + loadedRuleId_ + "\",";
+  json += "\"fault_policy\":\"" +
+          String(actuatorFaultPolicyName(loadedFaultPolicy_)) + "\",";
   json += "\"last_result\":\"" + lastResult_ + "\"";
   json += "}";
   return json;

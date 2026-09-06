@@ -177,7 +177,7 @@ Stage 6 core is therefore validated. Future subsystems should continue adopting 
 
 Stage 6D is physically validated on `0.1.22/build 23`: automatic MQTT reconnect timing and the 10 s telemetry heartbeat now belong to TaskScheduler. During a real broker disconnect, the telemetry work task disabled, connectivity/Supervisor degraded without affecting the application `ONLINE` state, the reconnect task recovered the session after eligibility returned, and telemetry re-armed with a delayed first run. The clean final image returned to HTTPS-only update policy and removed the lab endpoint.
 
-## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7E validated]
+## Stage 7 — Persistent configuration and local rule engine [in progress — Stage 7F implemented, physical proof pending]
 
 Implement versioned, validated, transactional configuration with rollback to previous configuration.
 
@@ -189,7 +189,8 @@ Core services:
 - [x] **Stage 7C** — TaskScheduler/EventBus-driven one-shot RuleRuntime physically validated, including real offline execution;
 - [x] **Stage 7D** — persisted rule binding to RuleEngine/RuleRuntime with boot/apply/rollback lifecycle physically validated;
 - [x] **Stage 7E** — local persisted delayed-action service above TaskScheduler; physical offline/reboot/rollback/clean-OTA proof validated;
-- [ ] dependency/fault policies for actuators.
+- [x] **Stage 7F implementation** — explicit actuator dependency/fault policy guard (`SAFE_OFF`, `SAFE_ON`, `KEEP_LAST_STATE`, `DISABLE_RULE`, `ALARM_ONLY`) wired into RuleRuntime and persisted-rule validation with legacy default `SAFE_OFF`;
+- [ ] physically prove all five Stage 7F policies and recovery without GPIO, then close Stage 7.
 
 Stage 7A stores rule/schedule envelopes but does not execute them yet. Rule semantics become active only after the RuleEngine validator/evaluator is introduced.
 
