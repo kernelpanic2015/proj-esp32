@@ -6,23 +6,27 @@ This directory is the canonical handoff for `proj-esp32`.
 
 **Core Foundation v1 is complete and reusable.** Stages 0-7 are the common platform baseline. Start new Core/application work at [`CORE_BASELINE.md`](CORE_BASELINE.md); `core-v1.0.0` is the first stable baseline name.
 
+Machine/agent-readable Core metadata lives at [`../core-manifest.json`](../core-manifest.json). New derived projects should use [`APPLICATION_BOOTSTRAP.md`](APPLICATION_BOOTSTRAP.md) to declare their Core baseline, hardware, safety behavior, telemetry and validation plan before implementation.
+
 RTC/display/touch/SD and physical sensors/actuators are optional application/module directions, not mandatory continuation stages.
 
 ## Read first in a new chat
 
 1. [`CORE_BASELINE.md`](CORE_BASELINE.md) — Core boundary, baseline/versioning model, telemetry feedback loop and rules for new applications/forks.
-2. [`BOOTSTRAP.md`](BOOTSTRAP.md) — current validated state, environment, Aurora control path and safe operating facts.
-3. [`ROADMAP.md`](ROADMAP.md) — historical Core stages 0-7 plus reference directions that applications may choose or ignore.
-4. [`ota.md`](ota.md) — A/B firmware update architecture, rollback lifecycle and update control surfaces.
-5. [`ota-test-log.md`](ota-test-log.md) — physical-device OTA validation and rollback test evidence.
-6. [`hardware.md`](hardware.md) — confirmed MCU/board/flash/serial facts and GPIO constraints.
-7. [`architecture.md`](architecture.md) — firmware architecture, state machine and network services.
-8. [`mqtt.md`](mqtt.md) — validated RabbitMQ/CloudAMQP MQTT/TLS setup, topics and smoke-test procedure.
-9. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, serial observation and Git synchronization workflow.
-10. [`runtime-test-log.md`](runtime-test-log.md) — physical validation evidence for the TaskScheduler + FSM modular runtime migration.
-11. [`configuration.md`](configuration.md) — Stage 7 transactional NVS configuration model and local-control contract.
-12. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
-13. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
+2. [`../core-manifest.json`](../core-manifest.json) — machine-readable Core identity, validated capabilities, contracts, application boundary and hardening backlog.
+3. [`APPLICATION_BOOTSTRAP.md`](APPLICATION_BOOTSTRAP.md) — template/contract for starting a derived ESP32 application without contaminating Core `main`.
+4. [`BOOTSTRAP.md`](BOOTSTRAP.md) — current validated state, environment, Aurora control path and safe operating facts.
+5. [`ROADMAP.md`](ROADMAP.md) — historical Core stages 0-7 plus reference directions that applications may choose or ignore.
+6. [`ota.md`](ota.md) — A/B firmware update architecture, rollback lifecycle and update control surfaces.
+7. [`ota-test-log.md`](ota-test-log.md) — physical-device OTA validation and rollback test evidence.
+8. [`hardware.md`](hardware.md) — confirmed MCU/board/flash/serial facts and GPIO constraints.
+9. [`architecture.md`](architecture.md) — firmware architecture, state machine and network services.
+10. [`mqtt.md`](mqtt.md) — validated RabbitMQ/CloudAMQP MQTT/TLS setup, topics and smoke-test procedure.
+11. [`operations.md`](operations.md) — PlatformIO/Aurora build, upload, serial observation and Git synchronization workflow.
+12. [`runtime-test-log.md`](runtime-test-log.md) — physical validation evidence for the TaskScheduler + FSM modular runtime migration.
+13. [`configuration.md`](configuration.md) — Stage 7 transactional NVS configuration model and local-control contract.
+14. [`dependencies.md`](dependencies.md) — why each firmware dependency was chosen and replacement/licensing caveats.
+15. [`references.md`](references.md) — board page, datasheet/pinout source and relevant upstream libraries/projects.
 
 ## Current milestones
 
@@ -68,6 +72,8 @@ RTC/display/touch/SD and physical sensors/actuators are optional application/mod
 - [x] Stage 7F all five dependency/fault policies + recovery physically validated
 - [x] Stage 7 closed on clean `0.1.41/build 42`
 - [x] reusable Core baseline documented for future applications/forks
+- [x] machine-readable `core-manifest.json` published
+- [x] application bootstrap contract/template published
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
