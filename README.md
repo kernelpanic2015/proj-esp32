@@ -27,9 +27,9 @@ The project is designed to be driven both interactively from VS Code and remotel
 
 ## Validated baseline — 2026-09-05
 
-**Current physical baseline:** `0.1.35/build 36`, `app0`, native OTA `VALID`, application `ONLINE`, `connectivity=ONLINE/OK`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. ConfigurationStore remains revision 3; the production RuleRuntime is `DISABLED` with no active rule and Stage 7C lab endpoints are absent.
+**Current physical baseline:** `0.1.37/build 38`, `app0`, native OTA `VALID`, application `ONLINE`, Supervisor `RUNNING/OK`, Wi-Fi + MQTT/TLS connected and EventBus `dropped=0`. ConfigurationStore is revision 6 with persisted rule `persisted.demo.a`; RuleEngine is configured/enabled and RuleRuntime is `ARMED`, while its work task remains disabled until input exists. Lab mutation endpoints are absent.
 
-**Stages 7A-7C are validated:** transactional configuration, hysteresis semantics, and one-shot local RuleRuntime execution have all been physically proven. **Stage 7D is in progress:** persisted ConfigurationStore rule documents become the source of truth for RuleEngine/RuleRuntime across boot, apply and rollback; physical persistence/rollback proof is pending.
+**Stages 7A-7D are validated:** transactional configuration, hysteresis semantics, one-shot local execution and persisted rule lifecycle have all been physically proven. Apply/reboot/replacement/rollback/clean-OTA preserve the local rule source of truth. **Stage 7E is next:** persisted local schedules and delayed actions above TaskScheduler.
 
 The current firmware is online and the complete MQTT/TLS round-trip has been validated against a CloudAMQP RabbitMQ instance:
 

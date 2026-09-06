@@ -257,3 +257,16 @@ No Wi-Fi, MQTT or cloud dependency is involved.
 loaded rule id and loader result. Virtual input/actuator components are present in the
 clean Stage 7D runtime as software-only local bindings; mutation/test HTTP endpoints
 remain lab-build-only. Real GPIO remains deferred.
+
+
+## Stage 7D physical validation
+
+Stage 7D was physically validated through the signed A/B path. The controlled `0.1.36-remote-test/build 37` image booted the existing revision 3 legacy envelope without executing it; `PersistedRuleLoader` reported `persisted_rule_type_unsupported`, RuleEngine remained unconfigured and RuleRuntime remained `DISABLED`. This proves migration safety: structurally valid legacy bytes are not silently interpreted as executable semantics.
+
+A candidate with inverted hysteresis (`on_below=18`, `off_above=16`) returned HTTP 400 with `persisted_rule_hysteresis_invalid`; revision 3 remained active. Valid rule A (`persisted.demo.a`, 16/18) then committed as revision 4. The loader immediately reported revision 4, RuleEngine became configured/enabled, RuleRuntime became `ARMED`, and the one-shot work task remained disabled until input arrived. Inputs 15 and 19 produced `TURN_ON` and `TURN_OFF`.
+
+An intentional reboot then loaded revision 4 automatically before network-dependent management was needed. Rule A again armed RuleRuntime and drove the virtual actuator. Rule B (`persisted.demo.b`, 14/20) committed as revision 5 and was activated immediately. Explicit ConfigurationStore rollback restored rule A as new monotonic revision 6; its 16/18 semantics were active immediately and survived another intentional reboot.
+
+Finally clean `0.1.37/build 38` installed on `app0`, reached `PENDING_VERIFY -> VALID`, retained configuration revision 6 and automatically loaded `persisted.demo.a`. RuleRuntime is `ARMED`, but `work_task_enabled=false` and `pending=false` because the clean virtual input has no value. Supervisor is `RUNNING/OK`, EventBus is `dropped=0`, Wi-Fi + MQTT/TLS are healthy, remote update is HTTPS-only, and the Stage 7D mutation/test endpoint returns HTTP 404.
+
+The physical proof was reconciled in Aurora issue #765 with marker `STAGE7D_PHYSICAL_PROOF_OK`. The earlier wrapper #764 reached every final assertion and installed the clean image but returned failure because a shell `pipefail`/`grep -q` assertion path was brittle against the large status payload; #765 rechecked the recorded intermediate proof plus live final state with JSON parsing and exited 0.

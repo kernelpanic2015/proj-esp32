@@ -187,7 +187,7 @@ Core services:
 - [x] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
 - [x] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; semantic and physical behavior validated;
 - [x] **Stage 7C** — TaskScheduler/EventBus-driven one-shot RuleRuntime physically validated, including real offline execution;
-- [~] **Stage 7D** — persisted rule binding to RuleEngine/RuleRuntime with boot/apply/rollback lifecycle; physical proof pending;
+- [x] **Stage 7D** — persisted rule binding to RuleEngine/RuleRuntime with boot/apply/rollback lifecycle physically validated;
 - [ ] **Stage 7E** — local `Scheduler` for schedules/delayed actions/settling windows;
 - [ ] dependency/fault policies for actuators.
 
@@ -201,7 +201,9 @@ The proof also exposed a recovery interaction: two intentional software reboots 
 
 **Stage 7C: VALIDATED on hardware.** Controlled `0.1.34-remote-test/build 35` proved the event-driven `RuleRuntime`: an input event scheduled exactly one TaskScheduler evaluation, returned the work task to disabled after completion, preserved hysteresis (`15 -> TURN_ON`, `17 -> HOLD`, `19 -> TURN_OFF`), and rejected new work after the rule was disabled. The decisive proof queued a local temperature event, deliberately removed Wi-Fi/MQTT before the event fired, confirmed HTTP became unavailable, and then observed after reconnection that the local event had still executed and turned the virtual heater ON. EventBus remained `dropped=0`. Clean `0.1.35/build 36` returned on `app0/VALID`, Wi-Fi + MQTT/TLS connected, HTTPS-only remote update restored, ConfigurationStore revision 3 preserved, production registry reduced to `connectivity`, RuleRuntime `DISABLED`, and lab endpoints returned HTTP 404.
 
-**Stage 7D next:** bind validated persisted rule documents and ConfigurationStore revisions to the RuleEngine/RuleRuntime lifecycle without weakening the Stage 7C rule that work tasks stay disabled until work is meaningful.
+**Stage 7D: VALIDATED on hardware.** Legacy revision 3 remained boot-readable but non-executable. A semantically invalid hysteresis candidate was rejected without changing revision 3. Valid rule A became revision 4 and immediately armed RuleRuntime; after reboot it reloaded automatically and drove the virtual actuator. Rule B became revision 5; explicit rollback restored rule A as monotonic revision 6, and that rollback survived reboot. Clean `0.1.37/build 38` reached `app0/VALID`, retained revision 6, automatically loaded `persisted.demo.a`, left RuleRuntime `ARMED` with its work task disabled until input exists, restored HTTPS-only operation and removed lab endpoints.
+
+**Stage 7E next:** introduce the local schedule/delayed-action service above TaskScheduler, keeping persisted schedule semantics separate from the scheduler primitive and keeping inactive schedule work disabled.
 
 ## Stage 8 — RTC, display, touch and SD foundation
 

@@ -56,7 +56,8 @@ This directory is the canonical handoff for `proj-esp32`.
 - [x] Stage 7A transactional ConfigurationStore: apply/reject/reboot/rollback/OTA persistence physically validated
 - [x] Stage 7B minimal RuleEngine + virtual I/O semantics physically validated
 - [x] Stage 7C TaskScheduler/EventBus one-shot rule runtime physically validated, including offline execution
-- [~] Stage 7D persisted rule binding + boot/apply/rollback lifecycle; physical proof pending
+- [x] Stage 7D persisted rule binding + boot/apply/rollback lifecycle physically validated
+- [ ] Stage 7E local schedule/delayed-action service
 - [ ] replace development `setInsecure()` with CA certificate validation
 - [ ] add MQTT LWT/retained offline state and reconnect backoff/jitter
 - [ ] mount LittleFS and add recovery UI
@@ -66,13 +67,13 @@ This directory is the canonical handoff for `proj-esp32`.
 
 ## Current runtime state
 
-Validated directly on the physical device on 2026-09-05 after Stage 7C closure:
+Validated directly on the physical device on 2026-09-05 after Stage 7D closure:
 
 - hostname: `proj-esp32`
 - mDNS: `proj-esp32.local`
 - device ID: `10A2CCEF49C0`
 - hardware model: `proj-esp32-35`, revision `1`
-- firmware: `0.1.35`, build `36`, channel `dev`
+- firmware: `0.1.37`, build `38`, channel `dev`
 - running OTA partition: `app0`
 - boot partition: `app0`
 - next update partition: `app1`
@@ -87,10 +88,12 @@ Validated directly on the physical device on 2026-09-05 after Stage 7C closure:
 - MQTT scheduler: coordinator enabled; reconnect work task disabled while connected; telemetry task enabled
 - PubSubClient payload buffer: explicit 4096 bytes; full status telemetry >2 KiB physically proven
 - remote OTA policy: HTTPS-only
-- lab-only Wi-Fi/MQTT/rule-runtime test endpoints: absent from the clean image
-- RuleRuntime: `DISABLED`, no active rule, work task disabled in the clean image
+- lab-only Wi-Fi/MQTT/rule mutation endpoints: absent from the clean image
+- ConfigurationStore: revision `6`, persisted rule `persisted.demo.a`
+- RuleEngine: configured/enabled from persisted configuration
+- RuleRuntime: `ARMED`; work task disabled and no pending work until input exists
 
-Stage 6 core runtime and Stage 7A transactional configuration are validated. **Stage 7B is physically validated:** the hardware-independent hysteresis RuleEngine correctly drove virtual desired state across ON/OFF thresholds and deadband, rejected invalid semantics, and did not actuate while disabled. **Stage 7C is now physically validated:** an EventBus input schedules exactly one TaskScheduler evaluation, the task disables again after completion, disabled rules reject work without scheduling it, and the rule path was proven to execute while Wi-Fi/MQTT were deliberately unavailable. Clean `0.1.35/build 36` exposes the read-only rule/runtime status only; lab endpoints are absent. **Stage 7D is next:** bind persisted validated rule documents/revisions to RuleEngine/RuleRuntime lifecycle.
+Stages 7A-7C remain validated. **Stage 7D is now physically validated:** persisted rule semantics activate immediately after transactional apply, reload automatically after reboot, follow monotonic ConfigurationStore rollback, and survive clean signed A/B OTA. Clean `0.1.37/build 38` holds configuration revision 6 with `persisted.demo.a` loaded; RuleRuntime is `ARMED` while its work task stays disabled until meaningful input exists. **Stage 7E is next:** local persisted schedules and delayed actions above TaskScheduler.
 
 ## OTA partition layout
 

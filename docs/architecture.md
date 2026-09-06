@@ -415,3 +415,10 @@ translation of a validated active rule document into RuleEngine semantics and as
 RuleRuntime to refresh eligibility. RuleRuntime still owns FSM/event/scheduler state;
 TaskScheduler never parses configuration. Apply and rollback activate the newly committed
 revision locally, preserving the rule that cloud/network manages but local firmware controls.
+
+
+### Stage 7D physical closure
+
+The persisted ownership boundary is now proven across apply, reboot, replacement, rollback and clean OTA. ConfigurationStore remains responsible only for durable transactional bytes/revisions. `PersistedRuleLoader` owns semantic translation/validation and activation. RuleEngine owns functional hysteresis decisions. RuleRuntime owns `DISABLED/ARMED/EVALUATING` runtime state and one-shot scheduling. VirtualActuatorComponent owns desired-state application; no GPIO is accessed.
+
+The clean baseline intentionally keeps the persisted rule armed while its input is unavailable. This is not a polling loop: `ARMED` expresses eligibility, while the TaskScheduler work task remains disabled until an input event makes evaluation meaningful. Stage 7E extends the same distinction to persisted schedules and delayed actions.

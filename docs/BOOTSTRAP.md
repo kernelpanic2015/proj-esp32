@@ -40,12 +40,12 @@ GitHub Issues in `kernelpanic2015/aurora-kpnote` are the command plane. Aurora W
 
 ## Current firmware baseline — verified 2026-09-05
 
-Current physical device state after Stage 7B minimal RuleEngine closure:
+Current physical device state after Stage 7D persisted-rule closure:
 
 - model: `proj-esp32-35`
 - hardware revision: `1`
-- firmware: `0.1.31`
-- build: `32`
+- firmware: `0.1.37`
+- build: `38`
 - channel: `dev`
 - running partition: `app0`
 - boot partition: `app0`
@@ -67,7 +67,7 @@ Current physical device state after Stage 7B minimal RuleEngine closure:
 
 `arkhipenko/TaskScheduler` 4.0.8 runs alongside `jonblack/arduino-fsm`: TaskScheduler owns timing/eligibility; FSMs own state/behavior; components own subsystem interpretation; EventBus owns transition delivery; Supervisor aggregates registry health only.
 
-Stage 6E physically proved a full Wi-Fi loss and recovery. Stage 7A then physically proved dual-slot transactional configuration, invalid-candidate rejection, reboot persistence, monotonic rollback and persistence across signed A/B OTA. The current ConfigurationStore document is revision 3 and remains local-NVS backed.
+Stage 6E physically proved full Wi-Fi loss/recovery. Stage 7A proved dual-slot transactional configuration. Stage 7B proved hysteresis semantics, Stage 7C proved event-driven local execution during a real Wi-Fi/MQTT outage, and Stage 7D now proves persisted rule activation across apply/reboot/rollback/OTA. The current ConfigurationStore document is revision 6 and remains local-NVS backed.
 
 Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 70% flash usage.
 
@@ -92,10 +92,24 @@ Normal build remains within the 1728 KiB OTA slot at roughly 17% static RAM and 
 - RuleEngine produces desired state only and never touches GPIO;
 - clean firmware exposes `GET /api/rules/status`;
 - controlled write/evaluation endpoints exist only in the lab build and are absent from the clean image;
-- clean physical baseline is `0.1.35/build 36`, `app0/VALID`;
-- ConfigurationStore remains revision 3; persisted rule binding is intentionally deferred to Stage 7D.
+- Stage 7B clean baseline was `0.1.31/build 32`; later stages supersede it.
 
-**Stage 7C validated:** TaskScheduler + EventBus now drive one-shot RuleRuntime evaluation. A real Wi-Fi/MQTT outage proved a locally queued input still evaluated and actuated the virtual component; completed work returns the task to disabled, and disabled rules reject new scheduling. Clean baseline is `0.1.35/build 36`, `app0/VALID`, HTTPS-only, ConfigurationStore revision 3, RuleRuntime `DISABLED`, lab endpoints absent. **Stage 7D next:** bind persisted validated rule documents/revisions to RuleEngine/RuleRuntime lifecycle.
+**Stage 7C validated:** TaskScheduler + EventBus drive one-shot RuleRuntime evaluation, including execution during real Wi-Fi/MQTT loss.
+
+## Stage 7D persisted rules — validated
+
+- clean physical baseline: `0.1.37/build 38`, `app0/VALID`;
+- ConfigurationStore revision: `6`;
+- active persisted rule: `persisted.demo.a`, hysteresis 16/18;
+- `PersistedRuleLoader` loads revision 6 automatically at boot;
+- RuleEngine: configured/enabled;
+- RuleRuntime: `ARMED`, work task disabled with no pending work until an input event exists;
+- invalid persisted semantics are rejected before slot/pointer activation;
+- apply activation, reboot reload, rule replacement, monotonic rollback and rollback reboot persistence are physically proven;
+- virtual bindings exist in the clean runtime, but mutation/test HTTP endpoints are absent;
+- Supervisor: `RUNNING/OK`; EventBus `dropped=0`; Wi-Fi + MQTT/TLS healthy; HTTPS-only remote update.
+
+**Stage 7E next:** local persisted schedule/delayed-action service above TaskScheduler. Keep scheduler primitives separate from schedule semantics; inactive work stays disabled.
 
 ## Flash layout — validated
 

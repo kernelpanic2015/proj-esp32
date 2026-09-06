@@ -180,3 +180,20 @@ Implementation checkpoint:
 - Canonical default firmware is promoted to `0.1.35/build 36`.
 
 **Stage 7C: VALIDATED. Stage 7D is next: persisted rule binding to the ConfigurationStore revision lifecycle.**
+
+
+## 2026-09-05 — Stage 7D persisted rule lifecycle
+
+### Result — PASS
+
+- Added `PersistedRuleLoader` as the semantic binding layer between ConfigurationStore revisions and RuleEngine/RuleRuntime.
+- Existing revision 3 legacy envelope stayed readable but non-executable (`persisted_rule_type_unsupported`); RuleRuntime remained disabled until a valid Stage 7D rule was committed.
+- Invalid hysteresis was rejected before persistence and revision 3 remained unchanged.
+- Rule A (`persisted.demo.a`, 16/18) became revision 4, activated immediately, armed RuleRuntime and produced `15 -> TURN_ON`, `19 -> TURN_OFF`.
+- After intentional reboot, revision 4 and rule A reloaded automatically and produced the same decisions.
+- Rule B (`persisted.demo.b`, 14/20) became revision 5 and activated immediately.
+- Explicit rollback restored rule A as monotonic revision 6; rule A immediately became active again and survived a second reboot.
+- Clean target `0.1.37/build 38` installed on `app0`, reached `PENDING_VERIFY -> VALID`, retained revision 6, automatically loaded rule A, left RuleRuntime `ARMED` with `work_task_enabled=false`/`pending=false`, restored HTTPS-only update behavior, kept Supervisor `RUNNING/OK`, EventBus `dropped=0`, and removed lab endpoints (HTTP 404).
+- Aurora #765 reconciled the complete proof and ended `completed`, exit code 0, with marker `STAGE7D_PHYSICAL_PROOF_OK`.
+
+**Stage 7D: VALIDATED. Stage 7E local schedule/delayed-action service is next.**
