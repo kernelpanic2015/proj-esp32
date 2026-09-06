@@ -186,7 +186,7 @@ Core services:
 - [x] **Stage 7A foundation** — dual-slot transactional NVS `ConfigurationStore`, monotonic revision, verified inactive-slot write, boot fallback and rollback API;
 - [x] physically prove apply -> reboot persistence -> second apply -> rollback -> reboot persistence;
 - [x] **Stage 7B** — minimal hysteresis `RuleEngine` + virtual input/actuator model; semantic and physical behavior validated;
-- [ ] **Stage 7C** — TaskScheduler-driven/event-forced evaluation with work task disabled when no active rules;
+- [~] **Stage 7C** — TaskScheduler-driven/event-forced evaluation implemented; physical offline-path proof pending;
 - [ ] local `Scheduler` for schedules/delayed actions/settling windows;
 - [ ] dependency/fault policies for actuators.
 

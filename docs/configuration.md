@@ -150,3 +150,48 @@ The enabled sequence produced exactly five evaluations. A disabled rule did not 
 During the lab proof the component registry contained `connectivity`, `virtual.temperature`, and `virtual.heater`; Supervisor remained `RUNNING/OK` and EventBus remained `dropped=0`. The clean `0.1.31/build 32` target then installed on `app0`, reached `VALID`, returned to HTTPS-only remote-update policy, retained ConfigurationStore revision 3, restored the normal registry to only `connectivity`, and returned HTTP 404 for `/api/test/rules/status`. The standard read-only `/api/rules/status` remained available with an unconfigured engine.
 
 Stage 7B intentionally stops at explicit/manual evaluation. Stage 7C adds TaskScheduler + EventBus runtime wiring; Stage 7D later binds persisted rule semantics to ConfigurationStore revisions.
+
+
+## Stage 7C — event-driven rule runtime
+
+Stage 7C introduces `RuleRuntime`, which connects the validated hysteresis RuleEngine to
+TaskScheduler and EventBus without moving state ownership into the scheduler.
+
+```text
+VirtualInputComponent
+      |
+      | InputValueChanged
+      v
+   EventBus
+      |
+      v
+ RuleRuntime FSM
+ DISABLED <-> ARMED -> EVALUATING -> ARMED
+      |
+      | one-shot work request
+      v
+ TaskScheduler
+      |
+      v
+ RuleEngine -> desired state -> ActuatorComponent
+```
+
+The runtime owns a single `TASK_ONCE` evaluation work task. The task stays disabled
+while no active rule exists and also stays disabled while an active rule is merely
+armed. An input event schedules one evaluation for the next cooperative scheduler pass;
+after the callback completes, TaskScheduler disables the one-shot task again.
+
+This deliberately separates three concepts:
+
+- `ARMED` means a rule is eligible to react;
+- `work_task_enabled=true` means an evaluation is actually pending/running;
+- `DISABLED` means no active rule exists, not a fault.
+
+Repeated requests while the work task is already enabled are coalesced instead of
+creating parallel rule evaluations. `GET /api/rules/runtime` exposes FSM state,
+work-task enable state, request/scheduled/coalesced/completed/rejected counters and
+last request/run results.
+
+The controlled lab build also includes a delayed virtual-input endpoint. It exists only
+to prove that a locally scheduled sensor event can run while Wi-Fi and MQTT are absent;
+it is removed from the clean image.

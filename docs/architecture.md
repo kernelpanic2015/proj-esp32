@@ -369,3 +369,15 @@ Stage 7D will bind validated persisted rule documents to the engine lifecycle.
 The virtual path was physically exercised on the device with thresholds 16/18. It preserved state inside the deadband, turned ON below the lower threshold, turned OFF above the upper threshold, rejected inverted thresholds, and ignored actuation when the rule was disabled. The controlled lab image registered virtual components only for the proof; the clean `0.1.31/build 32` image returned to the production registry with only `connectivity` and removed lab endpoints.
 
 This validates the ownership boundary before scheduling is introduced: **RuleEngine decides desired functional state; Component/FSM owns behavior; Driver owns hardware.** Stage 7C now adds only the timing/event layer: TaskScheduler determines when evaluation runs and EventBus may force a pending evaluation. No Stage 7C task should stay enabled when there is no active rule.
+
+
+## Stage 7C RuleRuntime scheduling boundary
+
+`RuleRuntime` is the adapter between EventBus/TaskScheduler and RuleEngine. Its FSM owns
+runtime eligibility (`DISABLED`, `ARMED`, `EVALUATING`); TaskScheduler owns only when
+the one-shot evaluation callback executes. RuleEngine still owns functional decision
+semantics and the actuator component owns application of desired state.
+
+A healthy armed rule therefore consumes no periodic evaluation task. Work appears only
+when an input event makes evaluation meaningful. This is the same platform rule used by
+sensor warm-up/retry work: tasks exist, but remain disabled until state makes them useful.

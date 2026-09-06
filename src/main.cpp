@@ -31,6 +31,7 @@
 #include "core/supervisor.h"
 #include "components/connectivity_component.h"
 #include "rules/rule_engine.h"
+#include "rules/rule_runtime.h"
 #ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
 #include "components/virtual_input_component.h"
 #include "components/virtual_actuator_component.h"
@@ -70,6 +71,14 @@ Components::VirtualInputComponent virtualTemperature(runtimeEvents, "virtual.tem
 Components::VirtualActuatorComponent virtualHeater(runtimeEvents, "virtual.heater");
 #endif
 
+bool ruleInputReady();
+float ruleInputValue();
+bool ruleOutputState();
+bool ruleApplyDesired(bool desiredOn);
+Rules::RuleRuntime ruleRuntime(cooperativeScheduler, runtimeEvents, ruleEngine,
+                               "virtual.temperature", ruleInputReady, ruleInputValue,
+                               ruleOutputState, ruleApplyDesired);
+
 bool mqttConfigured();
 bool runtimeWifiConnected();
 bool runtimeMqttConnected();
@@ -86,6 +95,9 @@ void coordinateMqttTasks();
 void runMqttReconnectTask();
 void runMqttTelemetryTask();
 String mqttRuntimeStatusJson();
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+void runRuleTestInputTask();
+#endif
 
 Components::ConnectivityComponent connectivityComponent(
     runtimeEvents, runtimeWifiConnected, runtimeMqttConnected, runtimeMqttConfigured);
@@ -107,6 +119,11 @@ Task mqttReconnectTask(ProjectConfig::MQTT_RECONNECT_INTERVAL_MS, TASK_FOREVER,
                        runMqttReconnectTask, &cooperativeScheduler, false);
 Task mqttTelemetryTask(ProjectConfig::HEARTBEAT_INTERVAL_MS, TASK_FOREVER,
                        runMqttTelemetryTask, &cooperativeScheduler, false);
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+Task ruleTestInputTask(TASK_IMMEDIATE, TASK_ONCE, runRuleTestInputTask,
+                       &cooperativeScheduler, false);
+float ruleTestPendingInput = 0.0f;
+#endif
 
 bool webStarted = false;
 bool networkServicesStarted = false;
@@ -270,6 +287,45 @@ bool runtimeMqttConfigured() {
   return mqttConfigured();
 }
 
+bool ruleInputReady() {
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  return virtualTemperature.hasValue();
+#else
+  return false;
+#endif
+}
+
+float ruleInputValue() {
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  return virtualTemperature.value();
+#else
+  return 0.0f;
+#endif
+}
+
+bool ruleOutputState() {
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  return virtualHeater.isOn();
+#else
+  return false;
+#endif
+}
+
+bool ruleApplyDesired(bool desiredOn) {
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  return virtualHeater.applyDesired(desiredOn);
+#else
+  (void)desiredOn;
+  return false;
+#endif
+}
+
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+void runRuleTestInputTask() {
+  virtualTemperature.setValue(ruleTestPendingInput);
+}
+#endif
+
 void sampleConnectivityComponent() {
   connectivityComponent.sample();
 }
@@ -320,6 +376,7 @@ String statusJson() {
   json += "\"update_scheduler\":" + FirmwareUpdateScheduler::statusJson() + ",";
   json += "\"configuration\":" + ConfigurationStore::statusJson() + ",";
   json += "\"rule_engine\":" + ruleEngine.statusJson() + ",";
+  json += "\"rule_runtime\":" + ruleRuntime.statusJson() + ",";
   json += "\"components\":" + runtimeComponents.statusJson() + ",";
   json += "\"supervisor\":" + runtimeSupervisor.statusJson() + ",";
   json += "\"event_bus\":{\"pending\":" + String(runtimeEvents.pending()) + ",\"dropped\":" + String(runtimeEvents.dropped()) + "},";
@@ -711,6 +768,7 @@ void startNetworkServices() {
     body += "configuration=/api/configuration\n";
     body += "configuration_status=/api/configuration/status\n";
     body += "rules_status=/api/rules/status\n";
+    body += "rules_runtime=/api/rules/runtime\n";
     body += "components=/api/components\n";
     body += "supervisor=/api/supervisor\n";
     body += "wifi_runtime=/api/wifi/runtime\n";
@@ -730,6 +788,10 @@ void startNetworkServices() {
 
   server.on("/api/rules/status", HTTP_GET, [](AsyncWebServerRequest* request) {
     request->send(200, "application/json", ruleEngine.statusJson());
+  });
+
+  server.on("/api/rules/runtime", HTTP_GET, [](AsyncWebServerRequest* request) {
+    request->send(200, "application/json", ruleRuntime.statusJson());
   });
 
   server.on("/api/supervisor", HTTP_GET, [](AsyncWebServerRequest* request) {
@@ -847,6 +909,7 @@ void startNetworkServices() {
       return;
     }
     virtualHeater.enable(false);
+    ruleRuntime.refreshEligibility();
     request->send(200, "application/json", ruleEngine.statusJson());
   });
 
@@ -889,9 +952,41 @@ void startNetworkServices() {
 
   server.on("/api/test/rules/reset", HTTP_POST, [](AsyncWebServerRequest* request) {
     ruleEngine.clear();
+    ruleRuntime.refreshEligibility();
     virtualTemperature.disable();
     virtualHeater.disable();
     request->send(200, "application/json", "{\"reset\":true}");
+  });
+#endif
+
+#ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
+  server.on("/api/test/rules/runtime", HTTP_GET, [](AsyncWebServerRequest* request) {
+    String json = "{\"engine\":" + ruleEngine.statusJson() +
+                  ",\"runtime\":" + ruleRuntime.statusJson() +
+                  ",\"input\":" + virtualTemperature.statusJson() +
+                  ",\"actuator\":" + virtualHeater.statusJson() + "}";
+    request->send(200, "application/json", json);
+  });
+
+  server.on("/api/test/rules/input/delayed", HTTP_POST, [](AsyncWebServerRequest* request) {
+    if (!request->hasParam("value", true) || !request->hasParam("delay_ms", true)) {
+      request->send(400, "application/json", "{\"error\":\"value_and_delay_required\"}");
+      return;
+    }
+    const float value = request->getParam("value", true)->value().toFloat();
+    const long parsedDelay = request->getParam("delay_ms", true)->value().toInt();
+    if (parsedDelay < 0 || parsedDelay > 15000) {
+      request->send(400, "application/json", "{\"error\":\"delay_out_of_range\"}");
+      return;
+    }
+    ruleTestPendingInput = value;
+    if (!ruleTestInputTask.restartDelayed(static_cast<unsigned long>(parsedDelay))) {
+      request->send(500, "application/json", "{\"error\":\"scheduler_rejected\"}");
+      return;
+    }
+    String json = "{\"accepted\":true,\"delay_ms\":" + String(parsedDelay) +
+                  ",\"value\":" + String(value, 3) + "}";
+    request->send(202, "application/json", json);
   });
 #endif
 
@@ -956,6 +1051,9 @@ void setup() {
   }
 
   runtimeEvents.subscribe(handleRuntimeEvent);
+  if (!ruleRuntime.begin()) {
+    Serial.println("RULE_RUNTIME_INIT_FAILED");
+  }
   runtimeComponents.add(connectivityComponent);
 #ifdef PROJ_RULE_ENGINE_TEST_ENDPOINTS
   runtimeComponents.add(virtualTemperature);

@@ -116,7 +116,7 @@ String RuleEngine::statusJson() const {
   String json = "{";
   json += "\"configured\":" + String(configured_ ? "true" : "false") + ",";
   json += "\"enabled\":" + String(enabled() ? "true" : "false") + ",";
-  json += "\"mode\":\"manual_stage7b\",";
+  json += "\"mode\":\"hysteresis_v1\",";
   json += "\"evaluation_count\":" + String(evaluationCount_) + ",";
   json += "\"last_evaluation_ms\":" + String(lastEvaluationMs_) + ",";
   json += "\"last_input\":" + String(lastInput_, 3) + ",";
